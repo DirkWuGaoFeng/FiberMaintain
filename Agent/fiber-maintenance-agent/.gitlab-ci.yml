@@ -1,0 +1,65 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_HOST: tcp://docker:2375
+
+# ═══════════ 每日定时 + 手动 + MR 触发 ═══════════
+api_test:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - pip install httpx pytest pytest-asyncio pytest-html websockets
+  script:
+    - cd tests/
+    - python -m pytest test_api/ -v --html=reports/report.html --self-contained-html || true
+    - python test_client.py --all --report
+  artifacts:
+    paths:
+      - tests/reports/
+    expire_in: 30 days
+    when: always
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_MERGE_REQUEST_ID'
+
+# ═══════════ 构建（测试通过才执行） ═══════════
+build:
+  stage: build
+  image: docker:24
+  services: [docker:24-dind]
+  script:
+    - docker compose build
+  needs: [api_test]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+
+# ═══════════ 部署 ═══════════
+deploy:
+  stage: deploy
+  image: docker:24
+  services: [docker:24-dind]
+  script:
+    - docker compose up -d
+  needs: [build]
+  environment:
+    name: production
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+
+# ═══════════ 失败通知 ═══════════
+notify_failure:
+  stage: deploy
+  image: curlimages/curl:latest
+  script:
+    - |
+      curl -X POST "$WECOM_WEBHOOK" \
+        -H 'Content-Type: application/json' \
+        -d "{\"msgtype\":\"text\",\"text\":{\"content\":\"🔴 光纤维护系统 CI/CD 失败！Pipeline: $CI_PIPELINE_URL\"}}"
+  when: on_failure

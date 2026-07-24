@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>光纤维护服务系统 · DeerFlow 2.0 — 前端原型</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg0:#070d17; --panel:#0e1a2c; --line:#1c3149; --line2:#2a4568;
+  --tx:#dce8f7; --tx2:#8ba3c2; --tx3:#5b7391;
+  --red:#ff5257; --amber:#ffb224; --green:#2fd6a3; --cyan:#3fd0ff; --blue:#4f8dff;
+  --mono:'JetBrains Mono',monospace; --disp:'Rajdhani','Noto Sans SC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg0);color:var(--tx);font-family:'Noto Sans SC',system-ui,sans-serif;font-size:13px;display:flex;flex-direction:column;overflow:hidden}
+body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(79,141,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(79,141,255,.05) 1px,transparent 1px);background-size:44px 44px}
+body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(700px 340px at 8% -5%,rgba(63,208,255,.10),transparent 60%),radial-gradient(600px 300px at 95% 0%,rgba(255,82,87,.07),transparent 60%),radial-gradient(800px 500px at 50% 115%,rgba(79,141,255,.08),transparent 60%)}
+.bgfib{position:fixed;inset:0;width:100%;height:100%;z-index:0;opacity:.14;pointer-events:none}
+.bgfib path{fill:none;stroke-width:1.4;stroke-dasharray:140 900;animation:shoot 9s linear infinite}
+.bgfib .p2{animation-delay:-3s;animation-duration:12s}.bgfib .p3{animation-delay:-6s;animation-duration:15s}
+@keyframes shoot{to{stroke-dashoffset:-1040}}
+header,main,.stats-band,footer{position:relative;z-index:1}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#22395a;border-radius:4px}::-webkit-scrollbar-track{background:transparent}
+
+header{height:54px;flex:none;display:flex;align-items:center;gap:16px;padding:0 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0d1a2e,#0a1424)}
+.brand{display:flex;align-items:center;gap:11px}
+.brand svg{width:30px;height:30px}
+.brand h1{font-size:16px;font-weight:700;letter-spacing:.04em}
+.brand small{display:block;font-family:var(--disp);font-size:10px;letter-spacing:.28em;color:var(--tx3);font-weight:600}
+.top-status{margin-left:auto;display:flex;align-items:center;gap:8px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--tx2);border:1px solid var(--line);border-radius:4px;padding:4px 9px;background:rgba(14,26,44,.7);font-family:var(--mono)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+.dot-g{background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2.2s infinite}
+.dot-c{background:var(--cyan);box-shadow:0 0 6px var(--cyan);animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.35}}
+.clock{font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:.06em;margin-left:6px}
+
+.panel{background:linear-gradient(180deg,#10203a 0%,#0d1828 100%);border:1px solid var(--line);border-radius:7px;box-shadow:0 6px 18px rgba(0,0,0,.35),inset 0 1px 0 rgba(120,180,255,.06);animation:rise .55s cubic-bezier(.2,.7,.3,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.hud{position:relative}
+.hud::before,.hud::after{content:'';position:absolute;width:11px;height:11px;pointer-events:none}
+.hud::before{top:-1px;left:-1px;border-top:2px solid rgba(63,208,255,.55);border-left:2px solid rgba(63,208,255,.55);border-radius:6px 0 0 0}
+.hud::after{bottom:-1px;right:-1px;border-bottom:2px solid rgba(63,208,255,.55);border-right:2px solid rgba(63,208,255,.55);border-radius:0 0 6px 0}
+.sec{display:flex;align-items:center;gap:7px;font-size:10.5px;font-weight:700;letter-spacing:.2em;color:var(--tx3);text-transform:uppercase;padding:10px 12px 8px}
+.sec::before{content:'';width:6px;height:6px;background:var(--cyan);transform:rotate(45deg);flex:none}
+.sec .r{margin-left:auto;letter-spacing:.04em;font-weight:400;font-family:var(--mono);color:var(--tx3);text-transform:none}
+
+/* 统计横条 */
+.stats-band{flex:none;display:grid;gap:12px;padding:12px 16px 4px;grid-template-columns:308px minmax(0,1fr) 262px 292px}
+.counters{display:flex;flex-direction:column;padding-bottom:8px}
+.cnt-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 10px}
+.cnt{border-radius:6px;padding:8px 10px 7px;border:1px solid var(--line);transition:transform .2s}
+.cnt:hover{transform:translateY(-2px)}
+.cnt.red{background:linear-gradient(180deg,rgba(255,82,87,.16),rgba(255,82,87,.04));border-color:rgba(255,82,87,.4)}
+.cnt.yel{background:linear-gradient(180deg,rgba(255,178,36,.14),rgba(255,178,36,.04));border-color:rgba(255,178,36,.4)}
+.cnt.tot{background:linear-gradient(180deg,rgba(63,208,255,.12),rgba(63,208,255,.03));border-color:rgba(63,208,255,.35)}
+.cnt label{font-size:10px;color:var(--tx2);letter-spacing:.1em}
+.cnt b{display:block;font-family:var(--disp);font-weight:700;font-size:34px;line-height:1.05;margin-top:2px}
+.cnt.red b{color:var(--red);text-shadow:0 0 18px rgba(255,82,87,.5)}
+.cnt.yel b{color:var(--amber);text-shadow:0 0 18px rgba(255,178,36,.45)}
+.cnt.tot b{color:var(--cyan)}
+.cnt b.flash{animation:numf .8s}
+@keyframes numf{30%{transform:scale(1.18);filter:brightness(1.6)}}
+.cnt small{font-size:10px;font-family:var(--mono);color:var(--tx3)}
+.almline{display:flex;gap:6px;padding:8px 10px 0;align-items:center}
+.alm-chip{font-size:10.5px;font-family:var(--mono);padding:2px 8px;border-radius:3px;border:1px solid var(--line)}
+.alm-chip.u{color:var(--red);border-color:rgba(255,82,87,.4);background:rgba(255,82,87,.08)}
+.alm-chip.m{color:var(--amber);border-color:rgba(255,178,36,.4);background:rgba(255,178,36,.07)}
+.push-ts{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--mono)}
+.push-ts i{color:var(--green);font-style:normal}
+
+.trend-p{display:flex;flex-direction:column;min-width:0}
+.trend-head{display:flex;align-items:center;gap:10px;padding:0 12px}
+.ranges{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.ranges button{background:transparent;border:none;color:var(--tx2);font-family:var(--mono);font-size:11px;padding:3px 10px;cursor:pointer;transition:.18s}
+.ranges button:hover{color:var(--cyan)}
+.ranges button.on{background:rgba(63,208,255,.16);color:var(--cyan)}
+.legend{display:flex;gap:12px;margin-left:auto;font-size:11px;color:var(--tx2)}
+.legend i{width:14px;height:3px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:middle}
+.cv-wrap{flex:1;position:relative;min-height:118px;margin:2px 6px 6px}
+canvas{position:absolute;inset:0;width:100%;height:100%}
+.ctip{position:absolute;display:none;pointer-events:none;z-index:5;background:#0a1626;border:1px solid var(--line2);border-radius:5px;padding:6px 9px;font-family:var(--mono);font-size:11px;box-shadow:0 6px 16px rgba(0,0,0,.5);white-space:nowrap}
+.pairs-p .body{padding:2px 12px 10px;display:flex;flex-direction:column;gap:8px}
+.pair{display:grid;grid-template-columns:86px 1fr 56px;align-items:center;gap:8px;font-size:11px}
+.pair .nm{font-family:var(--mono);color:var(--tx2);white-space:nowrap}
+.pair .bar{height:9px;background:#0a1524;border-radius:3px;overflow:hidden;display:flex;border:1px solid #16283f}
+.pair .bar i{height:100%;transition:width .8s cubic-bezier(.2,.7,.3,1)}
+.pair .bar .sr{background:linear-gradient(90deg,#c2373c,var(--red))}
+.pair .bar .sy{background:linear-gradient(90deg,#c07f10,var(--amber))}
+.pair .ct{font-family:var(--mono);font-size:10.5px;text-align:right;white-space:nowrap}
+.pair .ct em{font-style:normal;color:var(--red)}.pair .ct u{text-decoration:none;color:var(--amber)}
+.feed-p .body{padding:0 8px 8px;max-height:132px;overflow:hidden}
+.fitem{display:grid;grid-template-columns:56px 42px 1fr;gap:6px;align-items:center;font-size:11px;padding:4px 6px;border-radius:4px}
+.fitem.new{animation:slidein .5s cubic-bezier(.2,.7,.3,1),hl 2.4s}
+@keyframes slidein{from{opacity:0;transform:translateX(-12px)}}
+@keyframes hl{0%{background:rgba(63,208,255,.18)}100%{background:transparent}}
+.fitem .tm{font-family:var(--mono);color:var(--tx3);font-size:10.5px}
+.fitem .fid{font-family:var(--mono);color:var(--tx)}
+.trans{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--tx3)}
+.trans .d{width:8px;height:8px;border-radius:50%}
+.d.r{background:var(--red);box-shadow:0 0 5px var(--red)}.d.y{background:var(--amber);box-shadow:0 0 5px var(--amber)}.d.g{background:var(--green)}
+
+/* 主区 */
+main{flex:1;min-height:0;display:grid;gap:12px;padding:12px 16px;grid-template-columns:246px minmax(0,1fr) 348px}
+.rail{display:flex;flex-direction:column;gap:12px;min-height:0;overflow-y:auto}
+.btn-new{flex:none;padding:9px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;border:1px solid rgba(63,208,255,.5);color:var(--cyan);letter-spacing:.1em;background:linear-gradient(180deg,rgba(63,208,255,.16),rgba(63,208,255,.05));transition:.2s}
+.btn-new:hover{box-shadow:0 0 16px rgba(63,208,255,.35);transform:translateY(-1px)}
+.sess{padding-bottom:6px}
+.sitem{padding:7px 12px;cursor:pointer;border-left:2px solid transparent;transition:.15s}
+.sitem:hover{background:rgba(63,208,255,.06)}
+.sitem.on{border-left-color:var(--cyan);background:rgba(63,208,255,.09)}
+.sitem b{display:block;font-size:12.5px;font-weight:500}
+.sitem span{font-size:10.5px;color:var(--tx3);font-family:var(--mono)}
+.agrow{display:grid;grid-template-columns:8px 1fr auto;gap:8px;align-items:center;padding:5px 12px;font-size:11.5px;transition:background .3s}
+.agrow .nm{font-family:var(--mono);color:var(--tx2)}
+.agrow .mdl{font-family:var(--mono);font-size:9.5px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--tx3)}
+.agrow .mdl.b{color:var(--cyan);border-color:rgba(63,208,255,.4)}
+.agrow.busy{background:rgba(63,208,255,.09)}
+.agrow.busy .st{background:var(--cyan);box-shadow:0 0 7px var(--cyan);animation:pulse 1s infinite}
+.agrow .st{width:7px;height:7px;border-radius:50%;background:#3d5a7d;transition:.3s}
+.conc{margin:6px 12px 10px;font-size:10.5px;color:var(--tx3);font-family:var(--mono)}
+.conc .cb{height:5px;background:#0a1524;border:1px solid #16283f;border-radius:3px;margin-top:4px;overflow:hidden}
+.conc .cb i{display:block;height:100%;width:8%;background:linear-gradient(90deg,var(--blue),var(--cyan));transition:width .6s}
+.skill{display:flex;gap:8px;align-items:center;padding:5px 12px;font-size:11px;transition:.15s}
+.skill:hover{background:rgba(63,208,255,.06);transform:translateX(2px)}
+.skill .fi{color:var(--blue);font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:3px;padding:1px 4px}
+.skill .fn{font-family:var(--mono);color:var(--tx2)}
+.skill small{margin-left:auto;color:var(--tx3);font-size:10px}
+
+/* 对话 */
+.chat{display:flex;flex-direction:column;min-height:0}
+.chat-head{flex:none;display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--tx2)}
+.chat-head .tid{font-family:var(--mono);color:var(--tx3);font-size:10.5px}
+.chat-head .mw{margin-left:auto;display:flex;gap:5px;flex-wrap:wrap}
+.chat-head .mw span{font-size:9.5px;font-family:var(--mono);color:var(--tx3);border:1px solid var(--line);padding:1px 6px;border-radius:3px}
+#chatlog{flex:1;min-height:0;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth}
+.dayline{text-align:center;font-size:10.5px;color:var(--tx3);font-family:var(--mono);letter-spacing:.14em}
+.ubub{align-self:flex-end;max-width:76%;padding:9px 13px;border-radius:8px 8px 2px 8px;background:linear-gradient(180deg,rgba(63,208,255,.2),rgba(63,208,255,.08));border:1px solid rgba(63,208,255,.4);font-size:13px;animation:rise .35s both}
+.amsg{display:flex;gap:10px;animation:rise .4s both}
+.ava{flex:none;width:30px;height:30px;border-radius:6px;display:grid;place-items:center;background:linear-gradient(145deg,#123152,#0c1e36);border:1px solid var(--line2);font-family:var(--disp);font-weight:700;font-size:11px;color:var(--cyan)}
+.amsg .body{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.fold{border:1px solid var(--line);border-radius:6px;background:rgba(9,17,30,.6);overflow:hidden}
+.fold>.fhead{display:flex;align-items:center;gap:8px;padding:7px 11px;cursor:pointer;user-select:none;font-size:11.5px;color:var(--tx2);transition:background .15s}
+.fold>.fhead:hover{background:rgba(63,208,255,.06)}
+.fold .chev{transition:transform .25s;color:var(--tx3);font-size:10px}
+.fold.closed .chev{transform:rotate(-90deg)}
+.fold.closed .fbody{display:none}
+.fold.think{border-left:2px solid var(--cyan)}
+.fold.tool{border-left:2px solid var(--blue)}
+.fbody{padding:4px 11px 9px 26px}
+.tstep{font-size:12px;color:var(--tx2);padding:3px 0;position:relative;animation:rise .3s both}
+.tstep::before{content:'├─';position:absolute;left:-16px;color:#33507a;font-family:var(--mono);font-size:10px}
+.tstep:last-child::before{content:'└─'}
+.tstep code{font-family:var(--mono);font-size:11px;color:var(--cyan);background:rgba(63,208,255,.1);padding:0 5px;border-radius:3px}
+.tstep .mwt{color:var(--tx3);font-size:10.5px}
+.trow{display:flex;align-items:center;gap:8px;padding:3.5px 0;font-size:11.5px;animation:rise .3s both}
+.ttag{font-family:var(--mono);font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;letter-spacing:.06em;flex:none}
+.ttag.mcp{color:var(--cyan);background:rgba(63,208,255,.13);border:1px solid rgba(63,208,255,.35)}
+.ttag.sb{color:var(--amber);background:rgba(255,178,36,.12);border:1px solid rgba(255,178,36,.35)}
+.ttag.rag{color:var(--green);background:rgba(47,214,163,.12);border:1px solid rgba(47,214,163,.35)}
+.tname{font-family:var(--mono);color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tok{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--green);flex:none}
+.tnote{font-size:10.5px;color:var(--tx3)}
+.report{border:1px solid #234067;border-radius:6px;padding:13px 15px;background:linear-gradient(180deg,#0e1e36,#0b1728);box-shadow:inset 0 1px 0 rgba(120,180,255,.08)}
+.rp-line{font-size:12.8px;line-height:1.75;color:#c9d9ef;word-break:break-all}
+.rp-line.h2{font-size:15px;font-weight:700;color:#fff;padding-left:9px;border-left:3px solid var(--cyan);margin:2px 0 6px}
+.rp-line.h3{font-size:13px;font-weight:700;color:var(--cyan);margin-top:6px}
+.rp-line.li{padding-left:16px;position:relative}
+.rp-line.li::before{content:'▸';position:absolute;left:2px;color:var(--cyan)}
+.rp-line.hr{border-top:1px dashed #27405f;margin:8px 0 4px;height:0}
+.rp-line.meta{font-family:var(--mono);font-size:10.5px;color:var(--tx3)}
+.rp-line b{color:#fff}
+.rp-line code{font-family:var(--mono);font-size:11px;color:var(--cyan);background:rgba(63,208,255,.1);padding:0 5px;border-radius:3px}
+.caret{display:inline-block;width:7px;height:13px;background:var(--cyan);vertical-align:-2px;animation:blink .8s steps(1) infinite;margin-left:1px}
+@keyframes blink{50%{opacity:0}}
+.done{font-size:11px;color:var(--green);font-family:var(--mono);animation:rise .4s both}
+.batch{border:1px solid var(--line);border-radius:6px;background:rgba(9,17,30,.6);padding:10px 12px}
+.bhead{display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--tx2);margin-bottom:8px}
+.bprog{flex:1;height:5px;background:#0a1524;border:1px solid #16283f;border-radius:3px;overflow:hidden}
+.bprog i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--blue),var(--cyan));transition:width .5s}
+.brow{display:grid;grid-template-columns:48px 1fr auto;gap:8px;align-items:center;font-size:11.5px;padding:3px 0;animation:rise .3s both}
+.brow .bid{font-family:var(--mono);color:var(--tx)}
+.brow .brt{color:var(--tx3);font-size:10.5px;font-family:var(--mono)}
+.brow .bs{font-family:var(--mono);font-size:10.5px;color:var(--tx3)}
+.brow .bs.ok{color:var(--green)}.brow .bs.fail{color:var(--red)}
+.quick{flex:none;display:flex;gap:8px;padding:10px 14px 0;flex-wrap:wrap}
+.quick button{background:rgba(79,141,255,.08);border:1px solid var(--line);color:var(--tx2);font-size:11.5px;padding:4px 12px;border-radius:20px;cursor:pointer;transition:.18s}
+.quick button:hover:not(:disabled){border-color:var(--cyan);color:var(--cyan);transform:translateY(-1px);box-shadow:0 3px 10px rgba(63,208,255,.18)}
+.quick button:disabled{opacity:.4;cursor:not-allowed}
+.inrow{flex:none;display:flex;gap:10px;padding:10px 14px 14px}
+.inrow input{flex:1;background:#0a1524;border:1px solid var(--line);border-radius:6px;color:var(--tx);padding:10px 13px;font-size:13px;font-family:inherit;outline:none;transition:.2s}
+.inrow input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(63,208,255,.12)}
+.inrow .send{padding:0 22px;border-radius:6px;border:1px solid rgba(63,208,255,.55);cursor:pointer;background:linear-gradient(180deg,rgba(63,208,255,.25),rgba(63,208,255,.08));color:var(--cyan);font-weight:700;font-size:13px;letter-spacing:.14em;transition:.2s}
+.inrow .send:hover{box-shadow:0 0 18px rgba(63,208,255,.4)}
+.inrow .send.glow{animation:sendg 1s infinite}
+@keyframes sendg{50%{box-shadow:0 0 20px rgba(63,208,255,.7)}}
+
+/* 右栏 */
+.topo-p{flex:none}
+.topo-wrap{position:relative;padding:2px 6px 8px}
+.topo-wrap svg{width:100%;height:auto;display:block}
+.ne-box{fill:rgba(14,30,52,.85);stroke:#2a4568;stroke-width:1}
+.ne-lb{font-family:var(--disp);font-weight:700;font-size:12px;fill:#cfe2f8;letter-spacing:.06em}
+.ne-st{font-size:7.5px;fill:#5b7391;font-family:var(--mono)}
+.bchip{stroke-width:.8}
+.bchip.a{fill:rgba(63,208,255,.14);stroke:rgba(63,208,255,.5)}
+.bchip.p{fill:rgba(79,141,255,.1);stroke:#3a5b8c}
+.fib{fill:none;stroke-width:2;cursor:pointer;transition:stroke-width .15s}
+.fib:hover{stroke-width:3.6}
+.fib.r{stroke:var(--red);stroke-dasharray:7 5;animation:dashm 1s linear infinite;filter:drop-shadow(0 0 4px rgba(255,82,87,.8))}
+.fib.y{stroke:var(--amber);filter:drop-shadow(0 0 3px rgba(255,178,36,.55))}
+.fib.g{stroke:var(--green);opacity:.75}
+@keyframes dashm{to{stroke-dashoffset:-24}}
+.ttip{position:absolute;display:none;pointer-events:none;z-index:6;background:#0a1626;border:1px solid var(--line2);border-radius:5px;padding:5px 9px;font-family:var(--mono);font-size:10.5px;box-shadow:0 6px 16px rgba(0,0,0,.5);white-space:nowrap}
+.fibers-p{flex:1;min-height:0;display:flex;flex-direction:column}
+.fchips{display:flex;gap:6px;padding:0 12px 8px}
+.fchips button{background:transparent;border:1px solid var(--line);color:var(--tx2);font-size:11px;padding:2px 10px;border-radius:3px;cursor:pointer;transition:.15s;font-family:var(--mono)}
+.fchips button.on{border-color:var(--cyan);color:var(--cyan);background:rgba(63,208,255,.1)}
+#flist{flex:1;min-height:0;overflow-y:auto;padding:0 8px 8px}
+.frow{display:grid;grid-template-columns:12px 46px 1fr 54px 40px;gap:7px;align-items:center;padding:6px 8px;border-radius:5px;cursor:pointer;border-left:2px solid transparent;transition:.15s;font-size:11.5px}
+.frow:hover{background:rgba(63,208,255,.07);border-left-color:var(--cyan);transform:translateX(2px)}
+.fdot{width:8px;height:8px;border-radius:50%}
+.fdot.r{background:var(--red);box-shadow:0 0 6px var(--red);animation:pulse 1.4s infinite}
+.fdot.y{background:var(--amber);box-shadow:0 0 5px var(--amber)}
+.frow .fid{font-family:var(--mono);color:var(--tx)}
+.frow .frt{font-family:var(--mono);font-size:10.5px;color:var(--tx3)}
+.frow .fsl{font-family:var(--mono);font-size:10.5px;text-align:right}
+.fsl.bad{color:var(--red)}.fsl.mid{color:var(--amber)}
+.fal{font-size:9.5px;text-align:center;border-radius:3px;padding:1px 0;font-family:var(--mono)}
+.fal.u{color:var(--red);background:rgba(255,82,87,.12);border:1px solid rgba(255,82,87,.35)}
+.fal.m{color:var(--amber);background:rgba(255,178,36,.1);border:1px solid rgba(255,178,36,.35)}
+
+footer{flex:none;padding:7px 16px;border-top:1px solid var(--line);font-size:10.5px;color:var(--tx3);font-family:var(--mono);display:flex;gap:18px;background:#0a1424;flex-wrap:wrap}
+footer b{color:var(--tx2);font-weight:500}
+#toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%) translateY(20px);z-index:99;background:#0d1e34;border:1px solid var(--line2);color:var(--tx);padding:8px 18px;border-radius:6px;font-size:12px;opacity:0;pointer-events:none;transition:.3s;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+#toast.show{opacity:1;transform:translateX(-50%)}
+@media (max-width:1360px){.stats-band{grid-template-columns:280px minmax(0,1fr) 250px}.feed-p{display:none}main{grid-template-columns:220px minmax(0,1fr) 300px}}
+@media (max-width:1100px){body{overflow:auto}main{grid-template-columns:1fr}.rail{display:none}.stats-band{grid-template-columns:1fr 1fr}.trend-p{grid-column:1/-1}}
+</style>
+</head>
+<body>
+
+<svg class="bgfib" viewBox="0 0 1440 900" preserveAspectRatio="none">
+  <defs><linearGradient id="gf" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#3fd0ff" stop-opacity="0"/><stop offset=".5" stop-color="#3fd0ff"/><stop offset="1" stop-color="#3fd0ff" stop-opacity="0"/>
+  </linearGradient></defs>
+  <path class="p1" d="M-60,140 C320,60 760,260 1500,120" stroke="url(#gf)"/>
+  <path class="p2" d="M-60,470 C400,380 900,560 1500,430" stroke="url(#gf)"/>
+  <path class="p3" d="M-60,760 C360,700 980,860 1500,720" stroke="url(#gf)"/>
+</svg>
+
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 32 32" fill="none">
+      <path d="M3 22 C11 22 11 10 19 10 H29" stroke="#3fd0ff" stroke-width="1.8"/>
+      <path d="M3 16 H29" stroke="#4f8dff" stroke-width="1.8"/>
+      <path d="M3 10 C11 10 11 22 19 22 H29" stroke="#2fd6a3" stroke-width="1.8"/>
+      <circle cx="28" cy="16" r="2.6" fill="#3fd0ff"><animate attributeName="opacity" values="1;.3;1" dur="1.6s" repeatCount="indefinite"/></circle>
+    </svg>
+    <div><h1>光纤维护服务系统</h1><small>FIBER OPS · DEERFLOW 2.0 · FIBERHOME</small></div>
+  </div>
+  <div class="top-status">
+    <span class="pill"><i class="dot dot-g"></i>统计推送 WS :8766</span>
+    <span class="pill"><i class="dot dot-g"></i>DeerFlow API :8000</span>
+    <span class="pill"><i class="dot dot-c"></i>OLLAMA qwen2.5:72b 主</span>
+    <span class="clock" id="clock">----------</span>
+  </div>
+</header>
+
+<!-- ═══ 红/黄连纤实时统计面板（FM-09 / FM-10）═══ -->
+<section class="stats-band">
+  <div class="panel hud counters" style="animation-delay:.02s">
+    <div class="sec">实时统计 <span class="r">FM-09 · 推送≤10s</span></div>
+    <div class="cnt-row">
+      <div class="cnt red"><label>🔴 红色连纤</label><b id="cRed">0</b><small>紧急告警触发</small></div>
+      <div class="cnt yel"><label>🟡 黄色连纤</label><b id="cYel">0</b><small>次要告警触发</small></div>
+      <div class="cnt tot"><label>有颜色总计</label><b id="cTot">0</b><small>网元间连纤</small></div>
+    </div>
+    <div class="almline">
+      <span class="alm-chip u">紧急 <b id="cUrg">0</b></span>
+      <span class="alm-chip m">次要 <b id="cMin">0</b></span>
+      <span class="push-ts"><i>●</i> 推送 <span id="pushTs">--:--:--</span></span>
+    </div>
+  </div>
+
+  <div class="panel hud trend-p" style="animation-delay:.08s">
+    <div class="sec">红/黄连纤趋势 <span class="r">FM-10 · 5min粒度 · 保留7天</span></div>
+    <div class="trend-head">
+      <div class="ranges" id="ranges">
+        <button data-r="1h">1h</button><button data-r="6h">6h</button>
+        <button data-r="24h" class="on">24h</button><button data-r="7d">7d</button>
+      </div>
+      <div class="legend"><span><i style="background:var(--red)"></i>红色</span><span><i style="background:var(--amber)"></i>黄色</span></div>
+    </div>
+    <div class="cv-wrap"><canvas id="trendCv"></canvas><div class="ctip" id="ctip"></div></div>
+  </div>
+
+  <div class="panel pairs-p" style="animation-delay:.14s">
+    <div class="sec">网元对分布</div>
+    <div class="body" id="pairs"></div>
+  </div>
+
+  <div class="panel feed-p" style="animation-delay:.2s">
+    <div class="sec">最近颜色变化 <span class="r">AL-05 订阅</span></div>
+    <div class="body" id="feed"></div>
+  </div>
+</section>
+
+<main>
+  <!-- 左栏：会话 / Sub-Agent / Skills -->
+  <aside class="rail">
+    <button class="btn-new" id="btnNew">＋ 新建会话</button>
+    <div class="panel sess" style="animation-delay:.1s">
+      <div class="sec">会话管理</div>
+      <div class="sitem on"><b>F001 质量分析</b><span>今天 10:32 · 进行中</span></div>
+      <div class="sitem"><b>批量紧急告警分析</b><span>今天 09:47 · 9成功/1失败</span></div>
+      <div class="sitem"><b>NE-C 巡检报告</b><span>昨天 16:20</span></div>
+      <div class="sitem"><b>7d 趋势查询</b><span>昨天 11:05</span></div>
+    </div>
+    <div class="panel" style="animation-delay:.16s">
+      <div class="sec">Sub-Agent 注册表</div>
+      <div id="agents">
+        <div class="agrow" data-ag="topology"><i class="st"></i><span class="nm">topology-analyst</span><span class="mdl">14B</span></div>
+        <div class="agrow" data-ag="data"><i class="st"></i><span class="nm">data-collector</span><span class="mdl">14B</span></div>
+        <div class="agrow" data-ag="analysis"><i class="st"></i><span class="nm">analysis-expert</span><span class="mdl b">72B</span></div>
+        <div class="agrow" data-ag="report"><i class="st"></i><span class="nm">report-generator</span><span class="mdl b">72B</span></div>
+        <div class="agrow" data-ag="rag"><i class="st"></i><span class="nm">rag-retriever</span><span class="mdl">14B</span></div>
+      </div>
+      <div class="conc">并发 <span id="concTx">0 / 5</span> · SubagentLimitMW
+        <div class="cb"><i id="concBar"></i></div>
+      </div>
+    </div>
+    <div class="panel" style="animation-delay:.22s">
+      <div class="sec">Markdown Skills</div>
+      <div class="skill"><span class="fi">MD</span><span class="fn">fiber_spanloss_analysis.md</span><small>衰耗</small></div>
+      <div class="skill"><span class="fi">MD</span><span class="fn">fiber_color_diagnosis.md</span><small>颜色</small></div>
+      <div class="skill"><span class="fi">MD</span><span class="fn">batch_fiber_analysis.md</span><small>批量</small></div>
+      <div class="skill"><span class="fi">MD</span><span class="fn">fiber_trend_analysis.md</span><small>趋势</small></div>
+      <div class="skill"><span class="fi">MD</span><span class="fn">ne_health_check.md</span><small>巡检</small></div>
+    </div>
+  </aside>
+
+  <!-- 中栏：DeerFlow 对话 -->
+  <section class="panel hud chat" style="animation-delay:.06s">
+    <div class="chat-head">
+      <span>🤖 Lead Agent</span><span class="tid">session: s-20260720-001</span>
+      <div class="mw"><span>RAGInjectionMW</span><span>DomainValidationMW</span><span>AuditLogMW</span><span>ModelDegradationMW</span></div>
+    </div>
+    <div id="chatlog"></div>
+    <div class="quick" id="quick">
+      <button data-q="colored">有颜色连纤</button>
+      <button data-q="batch">批量衰耗</button>
+      <button data-q="stats">统计</button>
+      <button data-q="check">网元巡检</button>
+    </div>
+    <div class="inrow">
+      <input id="inp" placeholder="输入自然语言指令，如：分析光纤 F019 的质量 / 分析所有紧急告警光纤…" autocomplete="off">
+      <button class="send" id="btnSend">发送</button>
+    </div>
+  </section>
+
+  <!-- 右栏：拓扑 + 有颜色连纤 -->
+  <aside class="rail">
+    <div class="panel topo-p" style="animation-delay:.12s">
+      <div class="sec">拓扑示意 <span class="r">TP-03 · 点击链路分析</span></div>
+      <div class="topo-wrap" id="topoWrap">
+        <svg viewBox="0 0 660 322" id="topo">
+          <defs><filter id="glow"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+          <path id="pF001" class="fib r" data-f="F001" d="M214,58 C320,50 340,50 446,58"/>
+          <path id="pF007" class="fib y" data-f="F007" d="M214,86 C320,92 340,92 446,86"/>
+          <path id="pF102" class="fib g" data-f="F102" d="M214,110 C330,132 330,190 446,214"/>
+          <path id="pF112" class="fib r" data-f="F112" d="M500,124 C494,158 494,162 500,196"/>
+          <path id="pF088" class="fib y" data-f="F088" d="M566,124 C572,158 572,162 566,196"/>
+          <path id="pF021" class="fib g" data-f="F021" d="M84,124 C78,158 78,162 84,196"/>
+          <path id="pF030" class="fib y" data-f="F030" d="M146,124 C152,158 152,162 146,196"/>
+          <path id="pF063" class="fib y" data-f="F063" d="M214,246 C320,238 340,238 446,246"/>
+          <circle r="2.6" fill="#7fe7ff" filter="url(#glow)"><animateMotion dur="3.2s" repeatCount="indefinite"><mpath href="#pF102"/></animateMotion></circle>
+          <circle r="2.6" fill="#ffd27f" filter="url(#glow)"><animateMotion dur="2.6s" repeatCount="indefinite"><mpath href="#pF063"/></animateMotion></circle>
+          <circle r="2.6" fill="#ff8a8d" filter="url(#glow)"><animateMotion dur="1.4s" repeatCount="indefinite"><mpath href="#pF001"/></animateMotion></circle>
+          <g><rect class="ne-box" x="24" y="28" width="190" height="96" rx="5"/>
+            <text class="ne-lb" x="36" y="50">NE-A</text><text class="ne-st" x="36" y="63">武汉·关山</text>
+            <rect class="bchip a" x="36" y="76" width="52" height="16" rx="2"/><text class="ne-st" x="41" y="87">有源×4</text>
+            <rect class="bchip p" x="96" y="76" width="52" height="16" rx="2"/><text class="ne-st" x="101" y="87">无源×4</text>
+            <text class="ne-st" x="36" y="112">BD-001~008</text></g>
+          <g><rect class="ne-box" x="446" y="28" width="190" height="96" rx="5"/>
+            <text class="ne-lb" x="458" y="50">NE-B</text><text class="ne-st" x="458" y="63">武汉·光谷</text>
+            <rect class="bchip a" x="458" y="76" width="52" height="16" rx="2"/><text class="ne-st" x="463" y="87">有源×5</text>
+            <rect class="bchip p" x="518" y="76" width="52" height="16" rx="2"/><text class="ne-st" x="523" y="87">无源×4</text>
+            <text class="ne-st" x="458" y="112">BD-009~017</text></g>
+          <g><rect class="ne-box" x="24" y="196" width="190" height="96" rx="5"/>
+            <text class="ne-lb" x="36" y="218">NE-C</text><text class="ne-st" x="36" y="231">鄂州·葛店</text>
+            <rect class="bchip a" x="36" y="244" width="52" height="16" rx="2"/><text class="ne-st" x="41" y="255">有源×3</text>
+            <rect class="bchip p" x="96" y="244" width="52" height="16" rx="2"/><text class="ne-st" x="101" y="255">无源×5</text>
+            <text class="ne-st" x="36" y="280">BD-018~025</text></g>
+          <g><rect class="ne-box" x="446" y="196" width="190" height="96" rx="5"/>
+            <text class="ne-lb" x="458" y="218">NE-D</text><text class="ne-st" x="458" y="231">黄石·大冶</text>
+            <rect class="bchip a" x="458" y="244" width="52" height="16" rx="2"/><text class="ne-st" x="463" y="255">有源×4</text>
+            <rect class="bchip p" x="518" y="244" width="52" height="16" rx="2"/><text class="ne-st" x="523" y="255">无源×6</text>
+            <text class="ne-st" x="458" y="280">BD-026~035</text></g>
+        </svg>
+        <div class="ttip" id="ttip"></div>
+      </div>
+    </div>
+    <div class="panel fibers-p" style="animation-delay:.18s">
+      <div class="sec">有颜色连纤 <span class="r">FM-08 · <span id="fcount">0</span> 条</span></div>
+      <div class="fchips" id="fchips">
+        <button data-f="all" class="on">全部</button>
+        <button data-f="red">🔴 <span id="fcR">0</span></button>
+        <button data-f="yellow">🟡 <span id="fcY">0</span></button>
+      </div>
+      <div id="flist"></div>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  <span><b>需求规格说明书 v12.0</b>（DeerFlow 2.0 版）</span>
+  <span>前端原型 · Mock 数据</span>
+  <span>操作对象：仅网元间连纤（src_ne_id ≠ dst_ne_id）</span>
+  <span>Spanloss = OOP − IOP</span>
+  <span style="margin-left:auto">统计粒度 5min · 保留 7 天 · 刷新 ≤10s</span>
+</footer>
+<div id="toast"></div>
+
+<script>
+/* ══════════ 工具 ══════════ */
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const pad2=n=>String(n).padStart(2,'0');
+const fmtT=d=>pad2(d.getHours())+':'+pad2(d.getMinutes());
+const fmtS=d=>fmtT(d)+':'+pad2(d.getSeconds());
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2200);}
+function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmt(s){return esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`(.+?)`/g,'<code>$1</code>');}
+const tid=()=>'tr-'+Math.random().toString(16).slice(2,10);
+
+/* ══════════ Mock 数据（网元 / 连纤 / 颜色规则）══════════ */
+const SITE={'NE-A':'武汉·关山','NE-B':'武汉·光谷','NE-C':'鄂州·葛店','NE-D':'黄石·大冶'};
+const PAIRS=[{a:'NE-A',b:'NE-B',red:3,yel:5},{a:'NE-A',b:'NE-C',red:2,yel:6},{a:'NE-B',b:'NE-D',red:4,yel:7},{a:'NE-C',b:'NE-D',red:2,yel:8},{a:'NE-A',b:'NE-D',red:1,yel:2}];
+const fibers=[];let _fid=1;
+PAIRS.forEach(p=>{
+  const mk=color=>{
+    const id='F'+String(_fid).padStart(3,'0');_fid++;
+    const scenario=Math.random()<0.55?2:1,kase=Math.random()<0.5?'A':'B';
+    const oop=+rnd(2,6).toFixed(1);
+    let span,los=false,alarm=null,iop=null;
+    if(color==='red'){los=Math.random()<0.6;span=los?null:+rnd(6,9).toFixed(1);alarm=los?{lv:'紧急',tp:'LOS'}:{lv:'紧急',tp:'光功率越限'};}
+    else if(color==='yellow'){span=+rnd(5.6,7.4).toFixed(1);alarm={lv:'次要',tp:'光功率越限'};}
+    else{span=+rnd(2.2,5.2).toFixed(1);}
+    if(span!=null)iop=+(oop-span).toFixed(1);
+    fibers.push({id,a:p.a,b:p.b,scenario,kase,color,oop:'-'+oop,iop:iop==null?null:'-'+iop,span,alarm,
+      sb:'BD-'+String((_fid*3)%97+1).padStart(3,'0'),db:'BD-'+String((_fid*5)%89+1).padStart(3,'0'),
+      mins:Math.floor(rnd(2,300))});
+  };
+  for(let i=0;i<p.red;i++)mk('red');
+  for(let i=0;i<p.yel;i++)mk('yellow');
+  for(let i=0;i<Math.round((p.red+p.yel)*0.9)+2;i++)mk('green');
+});
+const byId=id=>fibers.find(f=>f.id===id);
+const reds=()=>fibers.filter(f=>f.color==='red'),yels=()=>fibers.filter(f=>f.color==='yellow');
+const colored=()=>[...reds().sort((x,y)=>x.mins-y.mins),...yels().sort((x,y)=>x.mins-y.mins)];
+
+/* ══════════ 时钟 ══════════ */
+setInterval(()=>{const d=new Date();$('#clock').textContent=d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+' '+fmtS(d);},1000);
+
+/* ══════════ 统计面板 ══════════ */
+function setNum(id,v){const e=$(id);if(e.textContent!=String(v)){e.textContent=v;e.classList.remove('flash');void e.offsetWidth;e.classList.add('flash');}}
+function renderCounts(){
+  const r=reds().length,y=yels().length;
+  setNum('#cRed',r);setNum('#cYel',y);setNum('#cTot',r+y);setNum('#cUrg',r);setNum('#cMin',y);
+  $('#fcR').textContent=r;$('#fcY').textContent=y;$('#fcount').textContent=r+y;
+  $('#pushTs').textContent=fmtS(new Date());
+}
+function renderPairs(){
+  const box=$('#pairs');box.innerHTML='';
+  const mx=Math.max(...PAIRS.map(p=>p.red+p.yel));
+  PAIRS.forEach(p=>{
+    const hit=(c)=>fibers.filter(f=>f.color===c&&((f.a===p.a&&f.b===p.b)||(f.a===p.b&&f.b===p.a))).length;
+    const r=hit('red'),y=hit('yellow');
+    box.append(el('div','pair','<span class="nm">'+p.a+' ↔ '+p.b+'</span>'+
+      '<span class="bar"><i class="sr" style="width:'+(r/mx*100)+'%"></i><i class="sy" style="width:'+(y/mx*100)+'%"></i></span>'+
+      '<span class="ct"><em>🔴'+r+'</em> <u>🟡'+y+'</u></span>'));
+  });
+}
+const DC={red:'r',yellow:'y',green:'g'};
+function pushFeed(tm,fid,from,to,isNew){
+  const box=$('#feed');
+  box.prepend(el('div','fitem'+(isNew?' new':''),'<span class="tm">'+tm+'</span><span class="fid">'+fid+'</span>'+
+    '<span class="trans"><i class="d '+DC[from]+'"></i>→<i class="d '+DC[to]+'"></i>'+
+    '<span style="margin-left:4px">'+({red:'红色',yellow:'黄色',green:'绿色'})[to]+'</span></span>'));
+  while(box.children.length>7)box.lastChild.remove();
+}
+[['10:32:05','F001','green','red'],['10:28:41','F015','yellow','green'],['10:21:17','F044','green','yellow'],
+ ['10:15:02','F007','red','yellow'],['10:09:56','F112','yellow','red'],['10:02:33','F063','green','yellow']]
+ .forEach(x=>pushFeed(...x,false));
+
+/* ══════════ 趋势图（Canvas，FM-10）══════════ */
+const chart={range:'24h',red:[],yel:[],times:[],anim:1,hover:null};
+function genTrend(range){
+  const N={'1h':13,'6h':73,'24h':289,'7d':2017}[range];
+  const stride=Math.max(1,Math.ceil(N/340)),n=Math.floor((N-1)/stride)+1,now=Date.now();
+  let wr=rnd(9,13),wy=rnd(25,29);const R=[],Y=[],T=[];
+  for(let i=0;i<n;i++){
+    const t=new Date(now-(n-1-i)*5*60000*stride);
+    const wave=Math.sin((t.getHours()+t.getMinutes()/60-3)/24*Math.PI*2);
+    wr+=(Math.random()-.5)*1.6;wy+=(Math.random()-.5)*2;
+    R.push(Math.max(3,Math.min(19,wr+wave*3.4)));Y.push(Math.max(14,Math.min(38,wy+wave*4.6)));T.push(t);
+  }
+  chart.red=R;chart.yel=Y;chart.times=T;
+}
+function drawTrend(){
+  const cv=$('#trendCv'),ctx=cv.getContext('2d');
+  const w=cv.clientWidth,h=cv.clientHeight,dpr=window.devicePixelRatio||1;
+  if(cv.width!==w*dpr){cv.width=w*dpr;cv.height=h*dpr;}
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  const L=30,R=8,T=8,B=20,n=chart.red.length;
+  const max=Math.ceil(Math.max(...chart.red,...chart.yel)*1.15/5)*5;
+  const X=i=>L+(w-L-R)*i/(n-1),Y=v=>T+(h-T-B)*(1-v*chart.anim/max);
+  ctx.font='9.5px JetBrains Mono';ctx.fillStyle='#5b7391';ctx.strokeStyle='rgba(79,141,255,.12)';
+  for(let g=0;g<=3;g++){const v=max*g/3,y=Y(v);ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(w-R,y);ctx.stroke();ctx.fillText(Math.round(v),4,y+3);}
+  const step=Math.max(1,Math.floor(n/5));
+  for(let i=0;i<n;i+=step){const lb=chart.range==='7d'?(chart.times[i].getMonth()+1)+'/'+chart.times[i].getDate():fmtT(chart.times[i]);ctx.fillText(lb,X(i)-10,h-6);}
+  const line=(arr,col,fill)=>{
+    ctx.beginPath();arr.forEach((v,i)=>{const x=X(i),y=Y(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+    ctx.strokeStyle=col;ctx.lineWidth=1.8;ctx.stroke();
+    ctx.lineTo(X(n-1),h-B);ctx.lineTo(L,h-B);ctx.closePath();
+    const g=ctx.createLinearGradient(0,T,0,h-B);g.addColorStop(0,fill);g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.fill();
+  };
+  line(chart.yel,'#ffb224','rgba(255,178,36,.20)');
+  line(chart.red,'#ff5257','rgba(255,82,87,.24)');
+  if(chart.hover!=null){
+    const i=chart.hover,x=X(i);
+    ctx.strokeStyle='rgba(220,232,247,.35)';ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(x,T);ctx.lineTo(x,h-B);ctx.stroke();ctx.setLineDash([]);
+    [[chart.red[i],'#ff5257'],[chart.yel[i],'#ffb224']].forEach(([v,c])=>{
+      ctx.beginPath();ctx.arc(x,Y(v),3.4,0,7);ctx.fillStyle=c;ctx.fill();ctx.strokeStyle='#0a1424';ctx.lineWidth=1.6;ctx.stroke();});
+  }
+}
+function animTrend(){chart.anim=0;const t0=performance.now();
+  (function f(t){chart.anim=Math.min(1,(t-t0)/520);chart.anim=1-Math.pow(1-chart.anim,3);drawTrend();if(chart.anim<1)requestAnimationFrame(f);})(t0);}
+$('#ranges').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  $$('#ranges button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  chart.range=b.dataset.r;chart.hover=null;genTrend(chart.range);animTrend();});
+$('#trendCv').addEventListener('mousemove',e=>{
+  const r=e.currentTarget.getBoundingClientRect(),n=chart.red.length;
+  const i=Math.round((e.clientX-r.left-30)/(r.width-38)*(n-1));
+  if(i<0||i>=n){chart.hover=null;$('#ctip').style.display='none';drawTrend();return;}
+  chart.hover=i;drawTrend();
+  const tp=$('#ctip'),t=chart.times[i];
+  const lb=chart.range==='7d'?(t.getMonth()+1)+'/'+t.getDate()+' '+fmtT(t):fmtT(t);
+  tp.innerHTML='<span style="color:#8ba3c2">'+lb+'</span><br>🔴 '+Math.round(chart.red[i])+' · 🟡 '+Math.round(chart.yel[i]);
+  tp.style.display='block';
+  tp.style.left=Math.min(e.clientX-r.left+14,r.width-110)+'px';
+  tp.style.top=Math.max(e.clientY-r.top-44,4)+'px';
+});
+$('#trendCv').addEventListener('mouseleave',()=>{chart.hover=null;$('#ctip').style.display='none';drawTrend();});
+window.addEventListener('resize',drawTrend);
+
+/* ══════════ 有颜色连纤列表 ══════════ */
+let fFilter='all';
+function renderFlist(){
+  const box=$('#flist');box.innerHTML='';
+  colored().filter(f=>fFilter==='all'||f.color===fFilter).forEach(f=>{
+    const sl=f.span==null?'—':f.span+'dB';
+    const cls=f.span==null?'bad':(f.span>5.5?'bad':(f.span>5?'mid':''));
+    const row=el('div','frow','<i class="fdot '+DC[f.color]+'"></i><span class="fid">'+f.id+'</span>'+
+      '<span class="frt">'+f.a+'→'+f.b+' · 场景'+f.scenario+'</span>'+
+      '<span class="fsl '+cls+'">'+sl+'</span>'+
+      '<span class="fal '+(f.alarm.lv==='紧急'?'u':'m')+'">'+f.alarm.lv+'</span>');
+    row.onclick=()=>{$('#inp').value='分析光纤 '+f.id+' 的质量';$('#inp').focus();
+      $('#btnSend').classList.add('glow');toast('已填入指令 → '+f.id+'，点击「发送」开始分析');};
+    box.append(row);
+  });
+}
+$('#fchips').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  $$('#fchips button').forEach(x=>x.classList.remove('on'));b.classList.add('on');fFilter=b.dataset.f;renderFlist();});
+
+/* ══════════ 拓扑交互 ══════════ */
+$$('#topo .fib').forEach(p=>{
+  p.addEventListener('mousemove',e=>{
+    const f=byId(p.dataset.f),wr=$('#topoWrap').getBoundingClientRect(),tp=$('#ttip');
+    tp.innerHTML=f.id+' · '+f.a+'→'+f.b+' · '+(f.color==='red'?'🔴':f.color==='yellow'?'🟡':'🟢')+' '+(f.span==null?'LOS':f.span+'dB');
+    tp.style.display='block';
+    tp.style.left=Math.min(e.clientX-wr.left+12,wr.width-150)+'px';
+    tp.style.top=Math.max(e.clientY-wr.top-30,2)+'px';
+  });
+  p.addEventListener('mouseleave',()=>$('#ttip').style.display='none');
+  p.addEventListener('click',()=>{$('#inp').value='分析光纤 '+p.dataset.f+' 的质量';$('#inp').focus();
+    $('#btnSend').classList.add('glow');toast('已填入指令 → '+p.dataset.f);});
+});
+
+/* ══════════ 实时推送模拟（独立 WS :8766，≤10s 全局广播）══════════ */
+setInterval(()=>{
+  const roll=Math.random();let f,from,to;
+  if(roll<0.4){const gs=fibers.filter(x=>x.color==='green');f=gs[Math.floor(Math.random()*gs.length)];from='green';to='yellow';}
+  else if(roll<0.7){const ys=yels();f=ys[Math.floor(Math.random()*ys.length)];from='yellow';to=Math.random()<0.45?'red':'green';}
+  else{const rs=reds();if(!rs.length)return;f=rs[Math.floor(Math.random()*rs.length)];from='red';to='yellow';}
+  if(!f)return;
+  f.color=to;f.mins=0;
+  f.alarm=to==='red'?{lv:'紧急',tp:'LOS'}:to==='yellow'?{lv:'次要',tp:'光功率越限'}:null;
+  renderCounts();renderPairs();renderFlist();
+  pushFeed(fmtS(new Date()),f.id,from,to,true);
+  if(chart.range==='1h'){
+    chart.red.push(chart.red.at(-1)+rnd(-1,1.2));chart.red.shift();
+    chart.yel.push(chart.yel.at(-1)+rnd(-1.2,1.2));chart.yel.shift();
+    chart.times.push(new Date());chart.times.shift();drawTrend();
+  }
+},7000);
+
+/* ══════════ 对话引擎 ══════════ */
+const log=$('#chatlog');let playing=false;
+const scrollDown=()=>log.scrollTo({top:log.scrollHeight,behavior:'smooth'});
+function addUser(t){log.append(el('div','ubub',esc(t)));scrollDown();}
+function addShell(){const m=el('div','amsg','<div class="ava">DF</div><div class="body"></div>');log.append(m);scrollDown();return m.querySelector('.body');}
+function makeFold(title,cls){
+  const f=el('div','fold '+cls,'<div class="fhead"><span class="chev">▼</span>'+title+'</div><div class="fbody"></div>');
+  f.querySelector('.fhead').onclick=()=>f.classList.toggle('closed');return f;
+}
+async function addThink(body,steps,anim){
+  const f=makeFold('🤔 Lead Agent · 思考过程','think');body.append(f);
+  const bd=f.querySelector('.fbody');
+  for(const s of steps){bd.append(el('div','tstep',s));if(anim){scrollDown();await sleep(300);}}
+  if(!anim)f.classList.add('closed');scrollDown();
+}
+function setBusy(ag,on){
+  const row=document.querySelector('.agrow[data-ag="'+ag+'"]');if(!row)return;
+  row.classList.toggle('busy',on);
+  const n=$$('.agrow.busy').length;
+  $('#concTx').textContent=n+' / 5';$('#concBar').style.width=Math.max(6,n/5*100)+'%';
+}
+async function addTools(body,rows,anim){
+  const f=makeFold('🔧 工具调用 · '+rows.length+' 次','tool');body.append(f);
+  const bd=f.querySelector('.fbody');
+  for(const r of rows){
+    bd.append(el('div','trow','<span class="ttag '+r.tag+'">'+({mcp:'MCP',sb:'SANDBOX',rag:'RAG'})[r.tag]+'</span>'+
+      '<span class="tname">'+esc(r.name)+'</span><span class="tnote">'+(r.note||'')+'</span><span class="tok">✅ '+r.ms+'ms</span>'));
+    if(r.ag&&anim){setBusy(r.ag,true);setTimeout(()=>setBusy(r.ag,false),1400);}
+    if(anim){scrollDown();await sleep(340);}
+  }
+  if(!anim)f.classList.add('closed');scrollDown();
+}
+async function addReport(body,lines,anim){
+  const rp=el('div','report');body.append(rp);scrollDown();
+  const caret=el('span','caret');
+  for(const ln of lines){
+    if(ln.c==='hr'){rp.append(el('div','rp-line hr'));if(anim)await sleep(120);continue;}
+    const d=el('div','rp-line '+ln.c);rp.append(d);
+    if(anim){
+      d.append(caret);scrollDown();
+      for(let i=1;i<=ln.t.length;i++){d.textContent=ln.t.slice(0,i);d.append(caret);if(i%3===0)scrollDown();await sleep(9+Math.random()*14);}
+      d.remove();d.innerHTML=fmt(ln.t);rp.append(d);rp.append(caret);
+    }else d.innerHTML=fmt(ln.t);
+  }
+  caret.remove();scrollDown();
+}
+async function addBatch(body,items,anim){
+  const b=el('div','batch','<div class="bhead">📋 批量分析 · '+items.length+' 条 · 并发 5 · 分 2 批（SubagentLimitMW）<span class="bprog"><i></i></span></div><div class="brows"></div>');
+  body.append(b);scrollDown();
+  const bar=b.querySelector('.bprog i'),rows=b.querySelector('.brows');let done=0;
+  for(const it of items){
+    const r=el('div','brow','<span class="bid">'+it.id+'</span><span class="brt">'+it.rt+'</span><span class="bs">⏳ 分析中…</span>');
+    rows.append(r);scrollDown();
+    if(anim){setBusy('analysis',true);setBusy('data',true);await sleep(rnd(280,520));}
+    const bs=r.querySelector('.bs');
+    if(it.fail){bs.textContent='❌ 沙箱超时(30s)';bs.className='bs fail';}
+    else{bs.textContent='✅ '+(it.sl==null?'LOS':it.sl+'dB')+' · '+(it.red?'🔴':'🟡');bs.className='bs ok';}
+    done++;bar.style.width=(done/items.length*100)+'%';
+    if(anim)scrollDown();
+  }
+  setBusy('analysis',false);setBusy('data',false);
+  if(anim)await sleep(300);
+}
+function addDone(body,meta){body.append(el('div','done','✅ 完成 · '+meta));scrollDown();}
+
+/* ── 报告内容生成（严格套用颜色判定规则）── */
+const colorTx=c=>c==='red'?'🔴 红色':c==='yellow'?'🟡 黄色':'🟢 绿色';
+function ruleTx(f){
+  if(f.scenario===1)return '场景1（直连有源盘）：宿端口'+f.alarm.lv+'告警 → '+colorTx(f.color);
+  return '场景2 · 情况'+f.kase+'：'+(f.kase==='A'?'Port-3 连接有源盘 A2，综合 A2+B 判定':'Port-3 空闲，仅依据有源盘 B 判定');
+}
+function singleReport(f){
+  const over=f.span!=null&&f.span>5.5;
+  return [
+    {c:'h2',t:'光纤 '+f.id+' 质量分析报告'},
+    {c:'p',t:'**链路**：'+f.a+'（'+SITE[f.a]+'）→ '+f.b+'（'+SITE[f.b]+'） · 网元间连纤 · '+(f.scenario===1?'场景1（直连有源盘）':'场景2（经无源盘 · 情况'+f.kase+'）')},
+    {c:'p',t:'**性能**：OOP = '+f.oop+' dBm（'+f.sb+'/P1） · IOP = '+(f.iop==null?'--（信号丢失）':f.iop+' dBm（'+f.db+'/P1）')},
+    {c:'p',t:'**衰耗**：Spanloss = OOP − IOP = **'+(f.span==null?'--':f.span+' dB')+'** '+(f.span==null?'⚠️ LOS 无法计算':over?'⚠️ 超阈值（参考 `衰耗阈值标准 §2.1`，该链路 ≤ 5.5 dB）':'✅ 正常（阈值 ≤ 5.5 dB）')},
+    {c:'p',t:'**告警**：宿端有源盘 B 存在 **'+f.alarm.lv+'告警**（'+f.alarm.tp+'，产生于 '+f.mins+' 分钟前）'},
+    {c:'p',t:'**颜色判定**：'+ruleTx(f)+' → 最终 **'+colorTx(f.color)+'**'},
+    {c:'hr',t:''},
+    {c:'h3',t:'维护建议'},
+    {c:'li',t:f.alarm.lv==='紧急'?'**立即响应**：30 分钟内到场排查 '+f.b+' 侧 '+f.db+' 物理连接与尾纤弯曲半径（`维护规范 v2.3 §4.2`）':'**计划处理**：纳入本周巡检，清洁法兰并复测光功率（`告警处理指南 §3.1`）'},
+    {c:'li',t:over||f.span==null?'衰耗异常：建议 OTDR 定位事件点，核查熔接点与连接器端面':'衰耗在阈值内，无需特殊处理'},
+    {c:'li',t:'历史案例匹配：「'+f.a+'↔'+f.b+' 段 2025-11 类似告警」根因为法兰盘松动，处置耗时 42 分钟'},
+    {c:'meta',t:'参考：维护规范 v2.3 §4.2 · 阈值标准 §2.1 · RAG Top-3（相似度 0.91/0.87/0.84）'}
+  ];
+}
+
+/* ── 四类意图流程（对应时序图 8.1 / 8.2 / 8.3）── */
+async function playSingle(f,anim){
+  const body=addShell();
+  await addThink(body,[
+    '意图识别：<code>单条光纤质量分析</code>（AG-02，qwen2.5:72b）',
+    'RAG 自动注入：命中 <code>fiber_spanloss_analysis.md</code> + 维护规范 v2.3 <span class="mwt">(RAGInjectionMW)</span>',
+    '领域校验：src_ne='+f.a+' ≠ dst_ne='+f.b+' → 网元间连纤，允许操作 <span class="mwt">(DomainValidationMW)</span>',
+    '任务分解：拓扑 → 数据 → 分析 → 报告（task tool 动态派遣）'
+  ],anim);
+  await addTools(body,[
+    {tag:'rag',name:'vector_search + bm25 → reranker',note:'Top-3 知识',ms:Math.round(rnd(180,420)),ag:'rag'},
+    {tag:'mcp',name:'fiber_connection_query('+f.id+')',note:'API-TP-03 · 场景'+f.scenario,ms:Math.round(rnd(8,20)),ag:'topology'},
+    {tag:'mcp',name:'fiber_performance_query('+f.id+')',note:'API-FM-01',ms:Math.round(rnd(12,26)),ag:'data'},
+    {tag:'mcp',name:'alarm_query('+f.db+'/Port-1)',note:'API-AL-01 · '+f.alarm.tp,ms:Math.round(rnd(5,12)),ag:'data'},
+    {tag:'sb',name:'spanloss_calc.py',note:'Docker · 512MB',ms:Math.round(rnd(2,5)),ag:'analysis'},
+    {tag:'sb',name:'color_judge.py',note:'场景'+f.scenario+(f.scenario===2?'·情况'+f.kase:''),ms:Math.round(rnd(2,5)),ag:'analysis'},
+    {tag:'rag',name:'rag_query(维护建议)',note:'report-generator',ms:Math.round(rnd(120,300)),ag:'report'}
+  ],anim);
+  await addReport(body,singleReport(f),anim);
+  addDone(body,'耗时 '+rnd(2.1,4.8).toFixed(1)+'s · tools 7/10 · trace_id: '+tid());
+}
+async function playBatch(anim){
+  const body=addShell();
+  const list=reds().slice(0,10).map((f,i)=>({id:f.id,rt:f.a+'→'+f.b,red:true,sl:f.span,fail:f.id==='F003'||(i===2&&f.span!=null)}));
+  while(list.length<10){const f=yels()[list.length%yels().length];list.push({id:f.id,rt:f.a+'→'+f.b,red:false,sl:f.span,fail:false});}
+  await addThink(body,[
+    '意图识别：<code>批量分析（紧急告警光纤）</code> · 命中技能 <code>batch_fiber_analysis.md</code>',
+    'task(data-collector) → fiber_stats_query：命中 **'+list.length+' 条**紧急告警连纤',
+    'SubagentLimitMW：OLLAMA 队列深度 3 / 后端 12ms → 智能并发 = **5**，分 **2** 批',
+    '失败隔离：单条超时 ≤15s 不阻塞；Checkpoint 已保存断点'
+  ],anim);
+  await addBatch(body,list,anim);
+  const ok=list.filter(x=>!x.fail).length;
+  await addReport(body,[
+    {c:'h2',t:'批量分析汇总报告'},
+    {c:'p',t:'**结果**：'+ok+' 成功 / '+(list.length-ok)+' 失败（部分成功，NF-15）'},
+    {c:'p',t:'**红色确认**：'+list.filter(x=>x.red&&!x.fail).length+' 条维持 🔴；失败条目 '+(list.find(x=>x.fail)?.id||'--')+'（沙箱超时 30s，已标记，可断点续跑）'},
+    {c:'p',t:'**共性问题**：62% 衰耗超阈值，集中于 NE-B↔NE-D 段，疑似同一光缆束受外力挤压'},
+    {c:'h3',t:'处置建议'},
+    {c:'li',t:'优先抢修 NE-B↔NE-D 段，安排联合巡检（`维护规范 v2.3 §5`）'},
+    {c:'li',t:'失败条目执行「断点续跑」即可从 Checkpoint 恢复，不重复已完成条目'}
+  ],anim);
+  addDone(body,'耗时 '+rnd(9,14).toFixed(1)+'s · trace_id: '+tid());
+}
+async function playStats(anim){
+  const body=addShell();const r=reds().length,y=yels().length;
+  await addThink(body,['意图识别：<code>统计查询</code>（AG-12）','task(data-collector, "fiber_stats_query + fiber_trend_query(24h)")'],anim);
+  await addTools(body,[
+    {tag:'mcp',name:'fiber_stats_query()',note:'API-FM-09',ms:Math.round(rnd(6,14)),ag:'data'},
+    {tag:'mcp',name:'fiber_trend_query(24h)',note:'API-FM-10 · 5min',ms:Math.round(rnd(15,30)),ag:'data'}
+  ],anim);
+  await addReport(body,[
+    {c:'h2',t:'红/黄连纤实时统计'},
+    {c:'p',t:'**当前**：🔴 红色 **'+r+'** 条 · 🟡 黄色 **'+y+'** 条 · 合计 **'+(r+y)+'** 条（均为网元间连纤）'},
+    {c:'p',t:'**告警级别**：紧急 '+r+' / 次要 '+y+'；**网元对 TOP**：NE-C↔NE-D（🔴2 🟡8）、NE-B↔NE-D（🔴4 🟡7）'},
+    {c:'p',t:'**24h 趋势**：红色 +2（10:32 F001 🟢→🔴 等），黄色 −1；峰值出现在 02:00-04:00 凌晨割接窗口'},
+    {c:'li',t:'已在顶部统计面板同步渲染（独立 WS :8766 全局推送，会话无关）'}
+  ],anim);
+  addDone(body,'trace_id: '+tid());
+}
+async function playCheck(anim){
+  const body=addShell();
+  await addThink(body,['意图识别：<code>网元健康巡检</code> · 命中技能 <code>ne_health_check.md</code>','派遣 topology-analyst 枚举 NE-C 关联连纤 → data-collector 批量采集 → analysis-expert 汇总'],anim);
+  await addTools(body,[
+    {tag:'mcp',name:'ne_query(NE-C)',note:'API-BD-04',ms:Math.round(rnd(8,16)),ag:'topology'},
+    {tag:'mcp',name:'batch_fiber_connection_query(NE-C)',note:'API-TP-04 · 14 条',ms:Math.round(rnd(18,32)),ag:'topology'},
+    {tag:'mcp',name:'batch_fiber_performance_query',note:'API-FM-02',ms:Math.round(rnd(25,48)),ag:'data'},
+    {tag:'sb',name:'batch_stats.py',note:'Docker',ms:Math.round(rnd(3,6)),ag:'analysis'}
+  ],anim);
+  await addReport(body,[
+    {c:'h2',t:'NE-C（鄂州·葛店）健康巡检报告'},
+    {c:'p',t:'**单盘**：有源×3 / 无源×5（BD-018~025）；Port-2 主端口全部占用，场景2 成立前提满足'},
+    {c:'p',t:'**连纤**：网元间 14 条 → 🔴 2 / 🟡 8 / 🟢 4；平均衰耗 5.9 dB（略高于全网均值 4.7）'},
+    {c:'p',t:'**健康评分**：**72 / 100（亚健康）** · 主要扣分项：NE-C↔NE-D 段黄色连纤集中'},
+    {c:'h3',t:'巡检建议'},
+    {c:'li',t:'本周内清洁 NE-C 侧 8 个法兰连接器并复测（`巡检流程 §2`）'},
+    {c:'li',t:'对 2 条红色连纤发起单条深度分析（可直接点击右侧列表）'}
+  ],anim);
+  addDone(body,'trace_id: '+tid());
+}
+
+/* ── 意图路由 ── */
+async function handle(text){
+  if(playing)return;playing=true;
+  $$('#quick button').forEach(b=>b.disabled=true);
+  addUser(text);
+  const body=addShell();
+  const t=el('div','rp-line meta','⏳ Lead Agent 接收中（首字延迟 < 2s · NF-09）…');
+  body.append(t);scrollDown();await sleep(500);t.remove();
+  const m=text.match(/F\d{3}/i);const fid=m?m[0].toUpperCase():null;
+  if(/批量|所有|全部|紧急告警光纤/.test(text))await playBatch(true);
+  else if(fid&&byId(fid))await playSingle(byId(fid),true);
+  else if(/统计|趋势|多少|数量/.test(text))await playStats(true);
+  else if(/巡检|健康|网元\s*NE-?C/i.test(text))await playCheck(true);
+  else if(fid){body.append(el('div','rp-line','未找到连纤 <code>'+fid+'</code>（仅支持网元间连纤，试试 F001 / F007 / F112）'));}
+  else{body.append(el('div','rp-line','我可以：<b>分析光纤 Fxxx 的质量</b> · <b>批量分析所有紧急告警光纤</b> · <b>查询红/黄统计与趋势</b> · <b>巡检 NE-C</b>'));}
+  playing=false;$$('#quick button').forEach(b=>b.disabled=false);
+}
+$('#btnSend').onclick=()=>{const v=$('#inp').value.trim();if(!v||playing)return;$('#inp').value='';$('#btnSend').classList.remove('glow');handle(v);};
+$('#inp').addEventListener('keydown',e=>{if(e.key==='Enter')$('#btnSend').click();});
+$('#quick').addEventListener('click',e=>{const b=e.target.closest('button');if(!b||playing)return;
+  const map={colored:'查询当前所有有颜色连纤的统计',batch:'分析所有紧急告警光纤',stats:'查询红/黄连纤统计和 24h 趋势',check:'巡检网元 NE-C 的健康状态'};
+  handle(map[b.dataset.q]);});
+$('#btnNew').onclick=()=>toast('新建会话（API-AG-02）— 原型中仅作提示');
+$$('.sitem').forEach(s=>s.onclick=()=>{$$('.sitem').forEach(x=>x.classList.remove('on'));s.classList.add('on');toast('切换会话（原型）');});
+
+/* ══════════ 初始化 ══════════ */
+renderCounts();renderPairs();renderFlist();
+genTrend('24h');requestAnimationFrame(()=>animTrend());
+log.append(el('div','dayline','—— 今天 · 2026-07-20 ——'));
+/* 预置历史对话（静态回放，对应规格书 2.8 示例） */
+(async()=>{
+  playing=true;$$('#quick button').forEach(b=>b.disabled=true);
+  addUser('分析光纤 F001 的质量');
+  await playSingle(byId('F001'),false);
+  playing=false;$$('#quick button').forEach(b=>b.disabled=false);
+  log.scrollTop=log.scrollHeight;
+})();
+</script>
+</body>
+</html>

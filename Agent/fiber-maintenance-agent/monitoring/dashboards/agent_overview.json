@@ -1,0 +1,40 @@
+{
+  "title": "Agent 性能概览",
+  "panels": [
+    {
+      "title": "请求 QPS",
+      "type": "graph",
+      "targets": [{"expr": "rate(agent_request_total[5m])"}]
+    },
+    {
+      "title": "请求延迟 P95",
+      "type": "graph",
+      "targets": [{"expr": "histogram_quantile(0.95, rate(agent_request_duration_seconds_bucket[5m]))"}]
+    },
+    {
+      "title": "工具调用次数",
+      "type": "graph",
+      "targets": [{"expr": "rate(agent_tool_call_total[5m])"}]
+    },
+    {
+      "title": "LLM Token 消耗",
+      "type": "graph",
+      "targets": [{"expr": "rate(agent_llm_tokens_total[5m])"}]
+    },
+    {
+      "title": "模型降级次数",
+      "type": "stat",
+      "targets": [{"expr": "agent_model_degradation_total"}]
+    },
+    {
+      "title": "并发 Sub-Agent",
+      "type": "gauge",
+      "targets": [{"expr": "agent_subagent_concurrent"}]
+    },
+    {
+      "title": "后端存活",
+      "type": "stat",
+      "targets": [{"expr": "backend_up"}]
+    }
+  ]
+}

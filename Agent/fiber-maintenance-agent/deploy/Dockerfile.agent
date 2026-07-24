@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 系统依赖（matplotlib 中文字体）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY skills/ ./skills/
+COPY knowledge_base/ ./knowledge_base/
+COPY plugins/ ./plugins/
+COPY config.yaml .
+
+# 初始化知识库
+RUN python -m src.rag.ingest --rebuild || true
+
+EXPOSE 8000
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

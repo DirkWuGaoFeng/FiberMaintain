@@ -1,0 +1,67 @@
+syntax = "proto3";
+package fiber.common;
+
+enum BoardType {
+    BOARD_TYPE_UNSPECIFIED = 0;
+    ACTIVE = 1;
+    PASSIVE = 2;
+}
+
+enum AlarmLevel {
+    ALARM_LEVEL_UNSPECIFIED = 0;
+    CRITICAL = 1;
+    MINOR = 2;
+}
+
+enum AlarmEventType {
+    ALARM_EVENT_UNSPECIFIED = 0;
+    ALARM_RAISED = 1;
+    ALARM_CLEARED = 2;
+}
+
+enum FiberEventType {
+    FIBER_EVENT_UNSPECIFIED = 0;
+    FIBER_CREATED = 1;
+    FIBER_DELETED = 2;
+}
+
+enum BoardEventType {
+    BOARD_EVENT_UNSPECIFIED = 0;
+    BOARD_CREATED = 1;
+    BOARD_DELETED = 2;
+}
+
+enum FiberColor {
+    COLOR_UNSPECIFIED = 0;
+    GREEN = 1;
+    RED = 2;
+    YELLOW = 3;
+}
+
+message PortInfo {
+    int32 port_id = 1;
+    bool occupied = 2;
+}
+
+message BoardInfo {
+    int32 board_id = 1;
+    BoardType board_type = 2;
+    int32 ne_id = 3;
+    repeated PortInfo ports = 4;
+}
+
+message FiberInfo {
+    int32 fiber_id = 1;
+    int32 src_board_id = 2;
+    int32 src_port_id = 3;
+    int32 src_ne_id = 4;
+    int32 dst_board_id = 5;
+    int32 dst_port_id = 6;
+    int32 dst_ne_id = 7;
+    string created_at = 8;
+}
+
+message HealthCheckResponse {
+    bool serving = 1;
+    string version = 2;
+}

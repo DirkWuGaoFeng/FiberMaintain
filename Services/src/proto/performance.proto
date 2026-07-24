@@ -1,0 +1,94 @@
+syntax = "proto3";
+package fiber.performance;
+import "common.proto";
+
+service PerformanceService {
+    rpc ReportPerformance(ReportPerformanceRequest) returns (ReportPerformanceResponse);
+    rpc GetCurrentPerformance(GetCurrentPerformanceRequest) returns (GetCurrentPerformanceResponse);
+    rpc GetHistoryPerformance(GetHistoryPerformanceRequest) returns (GetHistoryPerformanceResponse);
+    rpc BatchGetCurrentPerformance(BatchGetCurrentPerformanceRequest) returns (BatchGetCurrentPerformanceResponse);
+    rpc BatchGetHistoryPerformance(BatchGetHistoryPerformanceRequest) returns (BatchGetHistoryPerformanceResponse);
+    rpc HealthCheck(HealthCheckRequest) returns (fiber.common.HealthCheckResponse);
+}
+
+message ReportPerformanceRequest {
+    int32 board_id = 1;
+    int32 port_id = 2;
+    double oop_value = 3;
+    double iop_value = 4;
+}
+
+message ReportPerformanceResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetCurrentPerformanceRequest {
+    int32 board_id = 1;
+    int32 port_id = 2;
+}
+
+message GetCurrentPerformanceResponse {
+    int32 board_id = 1;
+    int32 port_id = 2;
+    double oop_value = 3;
+    double iop_value = 4;
+    string updated_at = 5;
+}
+
+message GetHistoryPerformanceRequest {
+    int32 board_id = 1;
+    int32 port_id = 2;
+    string start_time = 3;
+    string end_time = 4;
+}
+
+message GetHistoryPerformanceResponse {
+    repeated PerformanceRecord records = 1;
+}
+
+message PerformanceRecord {
+    string recorded_at = 1;
+    double oop_value = 2;
+    double iop_value = 3;
+}
+
+message BatchGetCurrentPerformanceRequest {
+    repeated PortRef ports = 1;
+}
+
+message PortRef {
+    int32 board_id = 1;
+    int32 port_id = 2;
+}
+
+message BatchGetCurrentPerformanceResponse {
+    repeated PerformanceResult results = 1;
+}
+
+message PerformanceResult {
+    bool found = 1;
+    int32 board_id = 2;
+    int32 port_id = 3;
+    double oop_value = 4;
+    double iop_value = 5;
+    string error_message = 6;
+}
+
+message BatchGetHistoryPerformanceRequest {
+    repeated PortRef ports = 1;
+    string start_time = 2;
+    string end_time = 3;
+}
+
+message BatchGetHistoryPerformanceResponse {
+    repeated PortHistoryResult results = 1;
+}
+
+message PortHistoryResult {
+    int32 board_id = 1;
+    int32 port_id = 2;
+    repeated PerformanceRecord records = 3;
+}
+
+message HealthCheckRequest {}

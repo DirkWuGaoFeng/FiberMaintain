@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+
+# Node.js
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.trae/
+
+# Logs & PID
+logs/
+*.pid
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+Services/build/
+
+# Environment
+.env
+*.env.local

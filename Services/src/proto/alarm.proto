@@ -1,0 +1,113 @@
+syntax = "proto3";
+package fiber.alarm;
+import "common.proto";
+
+service AlarmService {
+    rpc ReportAlarm(ReportAlarmRequest) returns (ReportAlarmResponse);
+    rpc ClearAlarm(ClearAlarmRequest) returns (ClearAlarmResponse);
+    rpc GetCurrentAlarm(GetCurrentAlarmRequest) returns (GetCurrentAlarmResponse);
+    rpc BatchGetCurrentAlarms(BatchGetCurrentAlarmsRequest) returns (BatchGetCurrentAlarmsResponse);
+    rpc SubscribeAlarmEvents(SubscribeAlarmEventsRequest) returns (stream AlarmEvent);
+    rpc CreatePullCall(CreatePullCallRequest) returns (CreatePullCallResponse);
+    rpc GetPullCallResult(GetPullCallResultRequest) returns (GetPullCallResultResponse);
+    rpc CancelPullCall(CancelPullCallRequest) returns (CancelPullCallResponse);
+    rpc HealthCheck(HealthCheckRequest) returns (fiber.common.HealthCheckResponse);
+}
+
+message ReportAlarmRequest {
+    int32 board_id = 1;
+    int32 port_id = 2;
+    fiber.common.AlarmLevel alarm_level = 3;
+}
+
+message ReportAlarmResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message ClearAlarmRequest {
+    int32 board_id = 1;
+    int32 port_id = 2;
+    fiber.common.AlarmLevel alarm_level = 3;
+}
+
+message ClearAlarmResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetCurrentAlarmRequest {
+    int32 board_id = 1;
+    int32 port_id = 2;
+}
+
+message GetCurrentAlarmResponse {
+    repeated AlarmRecord alarms = 1;
+}
+
+message AlarmRecord {
+    int32 board_id = 1;
+    int32 port_id = 2;
+    fiber.common.AlarmLevel alarm_level = 3;
+    string raised_at = 4;
+}
+
+message BatchGetCurrentAlarmsRequest {
+    repeated PortRef ports = 1;
+}
+
+message PortRef {
+    int32 board_id = 1;
+    int32 port_id = 2;
+}
+
+message BatchGetCurrentAlarmsResponse {
+    repeated PortAlarmResult results = 1;
+}
+
+message PortAlarmResult {
+    int32 board_id = 1;
+    int32 port_id = 2;
+    repeated AlarmRecord alarms = 3;
+}
+
+message SubscribeAlarmEventsRequest {}
+
+message AlarmEvent {
+    fiber.common.AlarmEventType event_type = 1;
+    int32 board_id = 2;
+    int32 port_id = 3;
+    fiber.common.AlarmLevel alarm_level = 4;
+    string timestamp = 5;
+}
+
+message CreatePullCallRequest {
+    repeated PortRef ports = 1;
+    bool include_history = 2;
+    int32 expire_seconds = 3;
+    string callback_service_addr = 4;
+}
+
+message CreatePullCallResponse {
+    string task_id = 1;
+    string status = 2;
+}
+
+message GetPullCallResultRequest {
+    string task_id = 1;
+}
+
+message GetPullCallResultResponse {
+    string status = 1;
+    repeated AlarmRecord data = 2;
+}
+
+message CancelPullCallRequest {
+    string task_id = 1;
+}
+
+message CancelPullCallResponse {
+    bool success = 1;
+}
+
+message HealthCheckRequest {}

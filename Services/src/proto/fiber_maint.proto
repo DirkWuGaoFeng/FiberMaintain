@@ -1,0 +1,180 @@
+syntax = "proto3";
+package fiber.maint;
+import "common.proto";
+import "alarm.proto";
+
+service FiberMaintService {
+    rpc GetFiberPerformance(GetFiberPerformanceRequest) returns (GetFiberPerformanceResponse);
+    rpc BatchGetFiberPerformance(BatchGetFiberPerformanceRequest) returns (BatchGetFiberPerformanceResponse);
+    rpc GetFiberHistoryPerformance(GetFiberHistoryPerformanceRequest) returns (GetFiberHistoryPerformanceResponse);
+    rpc BatchGetFiberHistoryPerformance(BatchGetFiberHistoryPerformanceRequest) returns (BatchGetFiberHistoryPerformanceResponse);
+    rpc GetFiberSpanloss(GetFiberSpanlossRequest) returns (GetFiberSpanlossResponse);
+    rpc BatchGetFiberSpanloss(BatchGetFiberSpanlossRequest) returns (BatchGetFiberSpanlossResponse);
+    rpc GetColoredFibers(GetColoredFibersRequest) returns (GetColoredFibersResponse);
+    rpc GetAllColoredFibers(GetAllColoredFibersRequest) returns (GetAllColoredFibersResponse);
+    rpc GetFiberStatsRealtime(GetFiberStatsRealtimeRequest) returns (GetFiberStatsRealtimeResponse);
+    rpc GetFiberStatsTrend(GetFiberStatsTrendRequest) returns (GetFiberStatsTrendResponse);
+    rpc SubscribeFiberColorEvents(SubscribeFiberColorEventsRequest) returns (stream FiberColorEvent);
+    rpc PullCallResultCallback(PullCallResultCallbackRequest) returns (PullCallResultCallbackResponse);
+    rpc HealthCheck(HealthCheckRequest) returns (fiber.common.HealthCheckResponse);
+}
+
+message GetFiberPerformanceRequest {
+    int32 fiber_id = 1;
+}
+
+message GetFiberPerformanceResponse {
+    int32 fiber_id = 1;
+    double src_oop = 2;
+    double dst_iop = 3;
+    int32 error_code = 4;
+    string error_message = 5;
+}
+
+message BatchGetFiberPerformanceRequest {
+    repeated int32 fiber_ids = 1;
+}
+
+message BatchGetFiberPerformanceResponse {
+    repeated FiberPerformanceResult results = 1;
+}
+
+message FiberPerformanceResult {
+    bool found = 1;
+    int32 fiber_id = 2;
+    double src_oop = 3;
+    double dst_iop = 4;
+    int32 error_code = 5;
+    string error_message = 6;
+}
+
+message GetFiberHistoryPerformanceRequest {
+    int32 fiber_id = 1;
+    string start_time = 2;
+    string end_time = 3;
+}
+
+message GetFiberHistoryPerformanceResponse {
+    repeated FiberPerformanceRecord records = 1;
+    int32 error_code = 2;
+    string error_message = 3;
+}
+
+message FiberPerformanceRecord {
+    string recorded_at = 1;
+    double src_oop = 2;
+    double dst_iop = 3;
+}
+
+message BatchGetFiberHistoryPerformanceRequest {
+    repeated int32 fiber_ids = 1;
+    string start_time = 2;
+    string end_time = 3;
+}
+
+message BatchGetFiberHistoryPerformanceResponse {
+    repeated FiberHistoryResult results = 1;
+}
+
+message FiberHistoryResult {
+    int32 fiber_id = 1;
+    repeated FiberPerformanceRecord records = 2;
+    int32 error_code = 3;
+    string error_message = 4;
+}
+
+message GetFiberSpanlossRequest {
+    int32 fiber_id = 1;
+}
+
+message GetFiberSpanlossResponse {
+    int32 fiber_id = 1;
+    double spanloss = 2;
+}
+
+message BatchGetFiberSpanlossRequest {
+    repeated int32 fiber_ids = 1;
+}
+
+message BatchGetFiberSpanlossResponse {
+    repeated SpanlossResult results = 1;
+}
+
+message SpanlossResult {
+    bool found = 1;
+    int32 fiber_id = 2;
+    double spanloss = 3;
+    string error_message = 4;
+}
+
+message GetColoredFibersRequest {
+    fiber.common.FiberColor color = 1;
+}
+
+message GetColoredFibersResponse {
+    repeated ColoredFiberInfo fibers = 1;
+}
+
+message ColoredFiberInfo {
+    fiber.common.FiberInfo fiber = 1;
+    fiber.common.FiberColor color = 2;
+    int32 scene_type = 3;
+    int32 scenario_case = 4;
+}
+
+message GetAllColoredFibersRequest {}
+
+message GetAllColoredFibersResponse {
+  repeated ColoredFiberInfo fibers = 1;
+}
+
+message GetFiberStatsRealtimeRequest {}
+
+message GetFiberStatsRealtimeResponse {
+    int32 red_count = 1;
+    int32 yellow_count = 2;
+    int32 green_count = 3;
+    int32 total_fibers = 4;
+    int32 active_alarms = 5;
+}
+
+message GetFiberStatsTrendRequest {
+    string start_time = 1;
+    string end_time = 2;
+}
+
+message GetFiberStatsTrendResponse {
+    repeated TrendPoint points = 1;
+}
+
+message TrendPoint {
+    string timestamp = 1;
+    int32 red_count = 2;
+    int32 yellow_count = 3;
+    int32 total_colored = 4;
+}
+
+message HealthCheckRequest {}
+
+message SubscribeFiberColorEventsRequest {}
+
+message FiberColorEvent {
+    int32 fiber_id = 1;
+    fiber.common.FiberInfo fiber = 2;
+    fiber.common.FiberColor old_color = 3;
+    fiber.common.FiberColor new_color = 4;
+    int32 scene_type = 5;
+    int32 scenario_case = 6;
+    string timestamp = 7;
+}
+
+message PullCallResultCallbackRequest {
+    string task_id = 1;
+    string status = 2;
+    repeated fiber.alarm.AlarmRecord alarms = 3;
+}
+
+message PullCallResultCallbackResponse {
+    bool success = 1;
+    string message = 2;
+}
