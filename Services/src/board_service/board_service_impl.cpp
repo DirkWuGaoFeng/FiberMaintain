@@ -112,7 +112,7 @@ grpc::Status BoardServiceImpl::DeleteBoard(grpc::ServerContext* context,
         return grpc::Status(grpc::NOT_FOUND, "Board not found");
     }
     
-    std::string topology_addr = Config::instance().get_string("topology_service.addr", "localhost:50052");
+    std::string topology_addr = Config::instance().get_string("topology_service.addr", "localhost:50062");
     auto channel = grpc::CreateChannel(topology_addr, grpc::InsecureChannelCredentials());
     auto stub = fiber::topology::TopologyService::NewStub(channel);
     
@@ -318,7 +318,7 @@ grpc::Status BoardServiceImpl::ListBoards(grpc::ServerContext* context,
 grpc::Status BoardServiceImpl::GetBoardFibers(grpc::ServerContext* context,
                                               const fiber::board::GetBoardFibersRequest* request,
                                               fiber::board::GetBoardFibersResponse* response) {
-    std::string topology_addr = Config::instance().get_string("topology_service.addr", "localhost:50052");
+    std::string topology_addr = Config::instance().get_string("topology_service.addr", "localhost:50062");
     auto channel = grpc::CreateChannel(topology_addr, grpc::InsecureChannelCredentials());
     auto stub = fiber::topology::TopologyService::NewStub(channel);
     

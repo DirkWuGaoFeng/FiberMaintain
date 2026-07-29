@@ -7,6 +7,7 @@
 #include <ctime>
 
 enum class LogLevel {
+    TRACE,
     DEBUG,
     INFO,
     WARN,
@@ -20,11 +21,14 @@ public:
     void set_level(LogLevel level);
     void log(LogLevel level, const std::string& message);
     
+    void trace(const char* message) { log(LogLevel::TRACE, message); }
     void debug(const char* message) { log(LogLevel::DEBUG, message); }
     void info(const char* message) { log(LogLevel::INFO, message); }
     void warn(const char* message) { log(LogLevel::WARN, message); }
     void error(const char* message) { log(LogLevel::ERROR, message); }
     
+    template<typename T>
+    void trace(const char* format, T v1) { log(LogLevel::TRACE, format_str(format, v1)); }
     template<typename T>
     void debug(const char* format, T v1) { log(LogLevel::DEBUG, format_str(format, v1)); }
     template<typename T>
@@ -35,6 +39,8 @@ public:
     void error(const char* format, T v1) { log(LogLevel::ERROR, format_str(format, v1)); }
     
     template<typename T, typename U>
+    void trace(const char* format, T v1, U v2) { log(LogLevel::TRACE, format_str(format, v1, v2)); }
+    template<typename T, typename U>
     void debug(const char* format, T v1, U v2) { log(LogLevel::DEBUG, format_str(format, v1, v2)); }
     template<typename T, typename U>
     void info(const char* format, T v1, U v2) { log(LogLevel::INFO, format_str(format, v1, v2)); }
@@ -44,6 +50,8 @@ public:
     void error(const char* format, T v1, U v2) { log(LogLevel::ERROR, format_str(format, v1, v2)); }
     
     template<typename T, typename U, typename V>
+    void trace(const char* format, T v1, U v2, V v3) { log(LogLevel::TRACE, format_str(format, v1, v2, v3)); }
+    template<typename T, typename U, typename V>
     void debug(const char* format, T v1, U v2, V v3) { log(LogLevel::DEBUG, format_str(format, v1, v2, v3)); }
     template<typename T, typename U, typename V>
     void info(const char* format, T v1, U v2, V v3) { log(LogLevel::INFO, format_str(format, v1, v2, v3)); }
@@ -52,6 +60,8 @@ public:
     template<typename T, typename U, typename V>
     void error(const char* format, T v1, U v2, V v3) { log(LogLevel::ERROR, format_str(format, v1, v2, v3)); }
     
+    template<typename T, typename U, typename V, typename W>
+    void trace(const char* format, T v1, U v2, V v3, W v4) { log(LogLevel::TRACE, format_str(format, v1, v2, v3, v4)); }
     template<typename T, typename U, typename V, typename W>
     void debug(const char* format, T v1, U v2, V v3, W v4) { log(LogLevel::DEBUG, format_str(format, v1, v2, v3, v4)); }
     template<typename T, typename U, typename V, typename W>

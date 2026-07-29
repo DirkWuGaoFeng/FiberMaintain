@@ -1,0 +1,94 @@
+syntax = "proto3";
+package fiber.board;
+import "common.proto";
+
+service BoardService {
+    rpc CreateBoard(CreateBoardRequest) returns (CreateBoardResponse);
+    rpc DeleteBoard(DeleteBoardRequest) returns (DeleteBoardResponse);
+    rpc GetBoard(GetBoardRequest) returns (GetBoardResponse);
+    rpc BatchGetBoards(BatchGetBoardsRequest) returns (BatchGetBoardsResponse);
+    rpc ListBoards(ListBoardsRequest) returns (ListBoardsResponse);
+    rpc GetBoardFibers(GetBoardFibersRequest) returns (GetBoardFibersResponse);
+    rpc SubscribeBoardEvents(SubscribeBoardEventsRequest) returns (stream BoardEvent);
+    rpc UpdatePortOccupied(UpdatePortOccupiedRequest) returns (UpdatePortOccupiedResponse);
+    rpc HealthCheck(HealthCheckRequest) returns (fiber.common.HealthCheckResponse);
+}
+
+message CreateBoardRequest {
+    int32 board_id = 1;
+    fiber.common.BoardType board_type = 2;
+    int32 ne_id = 3;
+}
+
+message CreateBoardResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message DeleteBoardRequest {
+    int32 board_id = 1;
+}
+
+message DeleteBoardResponse {
+    bool success = 1;
+    string message = 2;
+    repeated int32 deleted_fiber_ids = 3;
+}
+
+message GetBoardRequest {
+    int32 board_id = 1;
+}
+
+message GetBoardResponse {
+    fiber.common.BoardInfo board = 1;
+}
+
+message BatchGetBoardsRequest {
+    repeated int32 board_ids = 1;
+}
+
+message BatchGetBoardsResponse {
+    repeated BoardResult results = 1;
+}
+
+message BoardResult {
+    bool found = 1;
+    fiber.common.BoardInfo board = 2;
+    string error_message = 3;
+}
+
+message GetBoardFibersRequest {
+    int32 board_id = 1;
+}
+
+message GetBoardFibersResponse {
+    repeated fiber.common.FiberInfo fibers = 1;
+}
+
+message SubscribeBoardEventsRequest {}
+
+message BoardEvent {
+    fiber.common.BoardEventType event_type = 1;
+    int32 board_id = 2;
+    fiber.common.BoardType board_type = 3;
+    int32 ne_id = 4;
+    string timestamp = 5;
+}
+
+message UpdatePortOccupiedRequest {
+    int32 board_id = 1;
+    int32 port_id = 2;
+    bool occupied = 3;
+}
+
+message UpdatePortOccupiedResponse {
+    bool success = 1;
+}
+
+message ListBoardsRequest {}
+
+message ListBoardsResponse {
+    repeated fiber.common.BoardInfo boards = 1;
+}
+
+message HealthCheckRequest {}

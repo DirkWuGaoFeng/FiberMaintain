@@ -1,5 +1,7 @@
-"""ModelDegradationMiddleware：qwen3.6 动态降级 + 熔断器。
-primary → fallback → fast → 熔断（60s 半开恢复）。
+"""ModelDegradationMiddleware：多模型动态降级 + 熔断器。
+
+降级链: primary(7B) → fallback(3B) → fast(1.5B) → 熔断（60s 半开恢复）。
+v3.3.0: 降级时同步切换模型名称，而非仅切换参数。
 """
 from __future__ import annotations
 import time, logging
@@ -69,9 +71,17 @@ class ModelDegradationMiddleware(Middleware):
         self.breaker.record_failure()
         if self.breaker.failures >= self.breaker.threshold:
             if self.level < len(LEVELS) - 1:
+                old_level = LEVELS[self.level]
                 self.level += 1
-                MODEL_DEGRADATION.labels(level=LEVELS[self.level]).inc()
-                logger.warning("模型降级 → %s", LEVELS[self.level])
+                new_level = LEVELS[self.level]
+                MODEL_DEGRADATION.labels(level=new_level).inc()
+                # 获取新旧模型名称用于日志
+                models_cfg = settings.llm.get("models", {})
+                old_model = models_cfg.get(old_level, "unknown")
+                new_model = models_cfg.get(new_level, "unknown")
+                logger.warning(
+                    "模型降级: %s(%s) → %s(%s)",
+                    old_level, old_model, new_level, new_model)
                 self.breaker.failures = 0
                 self.breaker.opened_at = None
             else:

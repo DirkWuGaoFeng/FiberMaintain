@@ -21,32 +21,42 @@ def _lazy_chroma():
     return chromadb.PersistentClient(path=settings.rag["chromadb_path"])
 
 class Embedder:
-    """优先 sentence-transformers，缺失时退回 OLLAMA embeddings。"""
+    """优先 Ollama 本地 Embedding（nomic-embed-text），回退 sentence-transformers。"""
     def __init__(self) -> None:
         self._model = None
         self._mode = "ollama"
+        self._ollama_model = settings.rag.get("embedding_model", "nomic-embed-text")
+        # 如果配置的就是 Ollama 本地模型，直接使用
+        if "nomic" in self._ollama_model or "embed" in self._ollama_model:
+            self._mode = "ollama"
+            logger.info("Embedding: Ollama local (%s)", self._ollama_model)
+            return
+        # 否则尝试 sentence-transformers
         try:
             from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(settings.rag["embedding_model"])
+            self._model = SentenceTransformer(self._ollama_model)
             self._mode = "st"
             logger.info("Embedding: sentence-transformers (%s)",
-                        settings.rag["embedding_model"])
+                        self._ollama_model)
         except Exception:
-            logger.warning("sentence-transformers 不可用，退回 OLLAMA embedding")
+            self._mode = "ollama"
+            logger.warning("sentence-transformers 不可用，退回 Ollama embedding (%s)",
+                           self._ollama_model)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if self._mode == "st":
             return await asyncio.to_thread(
                 lambda: self._model.encode(texts, normalize_embeddings=True)
                 .tolist())
-        # OLLAMA 退回
+        # Ollama 本地 Embedding（nomic-embed-text 等）
         import httpx
         async with httpx.AsyncClient(timeout=30) as cli:
             out = []
             base = settings.llm["base_url"].replace("/v1", "")
             for t in texts:
                 r = await cli.post(f"{base}/api/embeddings",
-                                   json={"model": "bge-m3", "prompt": t})
+                                   json={"model": self._ollama_model, "prompt": t})
+                r.raise_for_status()
                 out.append(r.json()["embedding"])
             return out
 
@@ -54,11 +64,16 @@ class Reranker:
     """bge-reranker-v2-m3，缺失时跳过（使用加权分数）。"""
     def __init__(self) -> None:
         self._model = None
+        model_name = settings.rag.get("reranker_model", "")
+        # Ollama 本地模型不支持 FlagReranker，跳过
+        if "nomic" in model_name or "embed" in model_name:
+            logger.info("Reranker: 跳过（Ollama 本地模型 %s 不支持 FlagReranker）",
+                        model_name)
+            return
         try:
             from FlagEmbedding import FlagReranker
-            self._model = FlagReranker(settings.rag["reranker_model"],
-                                       use_fp16=True)
-            logger.info("Reranker: %s", settings.rag["reranker_model"])
+            self._model = FlagReranker(model_name, use_fp16=True)
+            logger.info("Reranker: %s", model_name)
         except Exception:
             logger.warning("FlagEmbedding 不可用，跳过重排（使用加权分数）")
 

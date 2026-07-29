@@ -12,11 +12,12 @@
         </svg>
         <div>
           <h1>光纤维护服务系统</h1>
-          <small>FIBER OPS · DEERFLOW 2.0 · FIBERHOME</small>
+          <small>FIBER OPS · DEERFLOW 2.0 · DIRKWU</small>
         </div>
       </div>
       <div class="nav-links">
-        <a href="/" class="nav-link">返回首页</a>
+        <router-link to="/" class="nav-link">返回首页</router-link>
+        <router-link to="/observability" class="nav-link">运行看板</router-link>
       </div>
     </header>
 

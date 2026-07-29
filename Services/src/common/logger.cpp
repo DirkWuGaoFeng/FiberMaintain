@@ -34,6 +34,7 @@ std::string Logger::get_timestamp() {
 
 std::string Logger::level_to_string(LogLevel level) {
     switch (level) {
+        case LogLevel::TRACE: return "TRACE";
         case LogLevel::DEBUG: return "DEBUG";
         case LogLevel::INFO:  return "INFO";
         case LogLevel::WARN:  return "WARN";

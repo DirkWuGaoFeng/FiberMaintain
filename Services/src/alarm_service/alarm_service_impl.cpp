@@ -69,6 +69,7 @@ grpc::Status AlarmServiceImpl::ReportAlarm(grpc::ServerContext* context,
     event.set_timestamp(get_current_timestamp());
     push_alarm_event(event);
     
+    Logger::instance().info("ReportAlarm alarm({}-{}-{})", board_id, port_id, alarm_level);
     return grpc::Status::OK;
 }
 
@@ -138,6 +139,8 @@ grpc::Status AlarmServiceImpl::ClearAlarm(grpc::ServerContext* context,
     event.set_timestamp(get_current_timestamp());
     push_alarm_event(event);
     
+    Logger::instance().info("ClearAlarm alarm({}-{}-{})", board_id, port_id, alarm_level);
+        
     return grpc::Status::OK;
 }
 
@@ -239,6 +242,7 @@ grpc::Status AlarmServiceImpl::SubscribeAlarmEvents(grpc::ServerContext* context
                     return grpc::Status::OK;
                 }
                 
+                Logger::instance().info("alarm event subscription report");
                 lock.lock();
             }
         } catch (const std::exception& e) {
@@ -272,14 +276,15 @@ grpc::Status AlarmServiceImpl::CreatePullCall(grpc::ServerContext* context,
     }
     
     task.expire_time = std::chrono::steady_clock::now() + std::chrono::seconds(expire_sec);
-    task.status = "processing";
+    task.status = "PROCESSING";
     pull_call_tasks_[task_id] = task;
     
     response->set_task_id(task_id);
-    response->set_status("processing");
+    response->set_status("PROCESSING");
     
     std::thread(&AlarmServiceImpl::process_pull_call_task, this, task_id).detach();
     
+    Logger::instance().info("CreatePullCall task_id({}) include_history({})", task_id, request->include_history());
     return grpc::Status::OK;
 }
 
@@ -289,7 +294,7 @@ void AlarmServiceImpl::process_pull_call_task(const std::string& task_id) {
         std::lock_guard<std::mutex> lock(task_mutex_);
         auto it = pull_call_tasks_.find(task_id);
         if (it != pull_call_tasks_.end()) {
-            it->second.status = "failed";
+            it->second.status = "FAILED";
         }
         return;
     }
@@ -330,7 +335,7 @@ void AlarmServiceImpl::process_pull_call_task(const std::string& task_id) {
         std::lock_guard<std::mutex> lock(task_mutex_);
         auto it = pull_call_tasks_.find(task_id);
         if (it != pull_call_tasks_.end()) {
-            it->second.status = "failed";
+            it->second.status = "FAILED";
         }
         return;
     }
@@ -354,7 +359,7 @@ void AlarmServiceImpl::process_pull_call_task(const std::string& task_id) {
         auto it = pull_call_tasks_.find(task_id);
         if (it != pull_call_tasks_.end()) {
             it->second.data = data;
-            it->second.status = "completed";
+            it->second.status = "COMPLETED";
             
             if (!it->second.callback_service_addr.empty()) {
                 std::string callback_addr = it->second.callback_service_addr;
@@ -372,7 +377,7 @@ void AlarmServiceImpl::process_pull_call_task(const std::string& task_id) {
                             
                             fiber::maint::PullCallResultCallbackRequest req;
                             req.set_task_id(callback_task_id);
-                            req.set_status("completed");
+                            req.set_status("COMPLETED");
                             for (const auto& alarm : callback_data) {
                                 *req.add_alarms() = alarm;
                             }
@@ -434,6 +439,7 @@ grpc::Status AlarmServiceImpl::GetPullCallResult(grpc::ServerContext* context,
         *response->add_data() = alarm;
     }
     
+    Logger::instance().info("GetPullCallResult task_id({}) status({})", request->task_id(), task.status);
     return grpc::Status::OK;
 }
 
@@ -451,6 +457,7 @@ grpc::Status AlarmServiceImpl::CancelPullCall(grpc::ServerContext* context,
     pull_call_tasks_.erase(it);
     response->set_success(true);
     
+    Logger::instance().info("CancelPullCall task_id({})", request->task_id());
     return grpc::Status::OK;
 }
 

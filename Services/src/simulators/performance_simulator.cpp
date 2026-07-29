@@ -55,6 +55,7 @@ int main(int argc, char** argv) {
     
     try {
         grpc::ClientContext ctx;
+        ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
         ListBoardsRequest req;
         ListBoardsResponse resp;
         
@@ -119,6 +120,7 @@ int main(int argc, char** argv) {
             perf.iop_current = std::max(-45.0, std::min(-5.0, perf.iop_current));
             
             grpc::ClientContext ctx;
+            ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(3));
             ReportPerformanceRequest req;
             req.set_board_id(perf.board_id);
             req.set_port_id(perf.port_id);

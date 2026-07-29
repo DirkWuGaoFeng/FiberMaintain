@@ -29,3 +29,15 @@ Services/build/
 # Environment
 .env
 *.env.local
+
+# Sensitive / Personal docs
+面试准备与项目复盘.md
+
+# IDE / Tool configs
+.qoder/
+
+# Third-party embedded repos
+Agent/deer-flow-agent/
+
+# Python client venv
+python_client/.venv/

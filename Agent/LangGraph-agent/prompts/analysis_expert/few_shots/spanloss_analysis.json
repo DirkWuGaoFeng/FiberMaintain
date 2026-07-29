@@ -1,0 +1,39 @@
+{
+  "description": "Spanloss 分析 Few-Shot 示例",
+  "examples": [
+    {
+      "input": {
+        "fiber_id": "FIB-001",
+        "spanloss_data": {
+          "current_spanloss_db": 0.85,
+          "threshold_db": 0.5,
+          "history": [
+            {"date": "2025-01-01", "spanloss_db": 0.32},
+            {"date": "2025-02-01", "spanloss_db": 0.45},
+            {"date": "2025-03-01", "spanloss_db": 0.62},
+            {"date": "2025-04-01", "spanloss_db": 0.85}
+          ]
+        },
+        "alarms": [
+          {"type": "SPANLOSS_HIGH", "severity": "warning", "time": "2025-03-15"}
+        ]
+      },
+      "expected_output": {
+        "summary": "FIB-001 跨段损耗持续上升，当前 0.85dB 已超过告警阈值，存在劣化风险。",
+        "findings": [
+          "跨段损耗从 0.32dB 上升至 0.85dB，4 个月内增长 166%",
+          "月均增长速率约 0.13dB，预计 2 个月内可能突破 1.0dB 严重阈值",
+          "已于 3 月 15 日触发 SPANLOSS_HIGH 告警"
+        ],
+        "severity": "warning",
+        "recommendations": [
+          "安排现场巡检，检查光纤接头和连接器状态",
+          "清洁光纤端面，排除污染导致的损耗增加",
+          "如清洁后无改善，考虑更换光纤段",
+          "加强监控频率，建议每日检测"
+        ],
+        "confidence": 0.85
+      }
+    }
+  ]
+}

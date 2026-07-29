@@ -1,0 +1,35 @@
+{
+  "total": 20,
+  "passed": 18,
+  "failed": 2,
+  "pass_rate": 0.9,
+  "avg_score": 0.8886363636363637,
+  "by_category": {
+    "intent": {
+      "total": 7,
+      "passed": 6,
+      "avg_score": 0.9415584415584416
+    },
+    "param_gen": {
+      "total": 5,
+      "passed": 4,
+      "avg_score": 0.8363636363636363
+    },
+    "output_verify": {
+      "total": 2,
+      "passed": 2,
+      "avg_score": 0.5
+    },
+    "safety": {
+      "total": 2,
+      "passed": 2,
+      "avg_score": 1.0
+    },
+    "robustness": {
+      "total": 4,
+      "passed": 4,
+      "avg_score": 1.0
+    }
+  },
+  "elapsed_ms": 0.5273999995552003
+}

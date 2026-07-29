@@ -1,5 +1,5 @@
-"""MCP 连接器：统一对接后端 API Gateway（REST :8080）。
-规范：单次超时 5s / 最大重试 2 次 / 全链路 trace_id / JSONL 审计。
+"""MCP 连接器 v3.2.1：统一对接后端 API Gateway（REST :8080）。
+规范：分级超时(单查2s/批量5s/趋势3s/RAG3s) / 熔断器(5次/分钟) / 全链路 trace_id / JSONL 审计。
 """
 from __future__ import annotations
 import asyncio, json, time, uuid, logging
@@ -52,25 +52,103 @@ def new_trace_id() -> str:
     return tid
 
 
+class CircuitBreaker:
+    """熔断器：5次/分钟阈值, 30s冷却, 半开探测。"""
+    CLOSED = "closed"       # 正常
+    OPEN = "open"           # 熔断中
+    HALF_OPEN = "half_open" # 探测中
+
+    def __init__(self, threshold: int = 5, cooldown: float = 30.0):
+        self._threshold = threshold
+        self._cooldown = cooldown
+        self._state = self.CLOSED
+        self._errors: list[float] = []
+        self._opened_at: float | None = None
+
+    @property
+    def state(self) -> str:
+        if self._state == self.OPEN:
+            if time.time() - (self._opened_at or 0) > self._cooldown:
+                self._state = self.HALF_OPEN
+        return self._state
+
+    def allow_request(self) -> bool:
+        s = self.state
+        if s == self.CLOSED:
+            return True
+        if s == self.HALF_OPEN:
+            return True  # 允许探测请求
+        return False  # OPEN
+
+    def record_success(self) -> None:
+        if self._state == self.HALF_OPEN:
+            self._state = self.CLOSED
+            self._errors.clear()
+            logger.info("CircuitBreaker: 半开探测成功，恢复关闭")
+
+    def record_failure(self) -> None:
+        now = time.time()
+        self._errors = [t for t in self._errors if now - t < 60]
+        self._errors.append(now)
+
+        if self._state == self.HALF_OPEN:
+            self._state = self.OPEN
+            self._opened_at = now
+            logger.warning("CircuitBreaker: 半开探测失败，重新熔断")
+        elif len(self._errors) >= self._threshold:
+            self._state = self.OPEN
+            self._opened_at = now
+            logger.warning("CircuitBreaker: %d次/分钟，熔断%ss",
+                           len(self._errors), self._cooldown)
+
+
+# 分级超时配置
+TIERED_TIMEOUTS = {
+    "single": 2.0,    # 单查
+    "batch": 5.0,     # 批量
+    "trend": 3.0,     # 趋势
+    "rag": 3.0,       # RAG
+    "default": 3.0,
+}
+
+
+def _classify_timeout(path: str) -> float:
+    """根据路径分类确定超时时间。"""
+    if "batch" in path or "bulk" in path:
+        return TIERED_TIMEOUTS["batch"]
+    if "trend" in path or "stats" in path:
+        return TIERED_TIMEOUTS["trend"]
+    if "rag" in path or "knowledge" in path or "search" in path:
+        return TIERED_TIMEOUTS["rag"]
+    if "/fibers/" in path and path.rstrip("/").split("/")[-1].isdigit():
+        return TIERED_TIMEOUTS["single"]
+    return TIERED_TIMEOUTS["default"]
+
+
 class FiberBackendClient:
     def __init__(self) -> None:
         cfg = settings.backend
         self._base = cfg["base_url"].rstrip("/")
         self._timeout = cfg["timeout_seconds"]
         self._retries = cfg["max_retries"]
-        self.batch_limit = cfg["batch_limit"]
+        self.batch_limit = cfg.get("batch_limit", 200)
         self._audit = AuditLogger(f"{settings.app['log_dir']}/mcp.jsonl")
         self._client: httpx.AsyncClient | None = None
-        self.offline = False                 # 离线模式标志（由 watchdog 维护）
+        self.offline = False
         self.down_since: float | None = None
+        self._circuit = CircuitBreaker()
 
-    async def _get_client(self) -> httpx.AsyncClient:
+    async def _get_client(self, timeout: float | None = None) -> httpx.AsyncClient:
+        t = timeout or self._timeout
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self._base,
-                timeout=httpx.Timeout(self._timeout),
+                timeout=httpx.Timeout(t),
                 headers={"X-Source": "fiber-agent"},
             )
+        elif t != self._timeout:
+            # 分级超时：重新设置超时
+            self._client.timeout = httpx.Timeout(t)
         return self._client
 
     # ───────────────────────── 核心请求 ─────────────────────────
@@ -78,7 +156,13 @@ class FiberBackendClient:
                       params: dict | None = None,
                       json_body: dict | None = None,
                       retryable: bool = True) -> Any:
+        # 熔断器检查
+        if not self._circuit.allow_request():
+            raise BackendUnavailable(
+                f"熔断器开启中，拒绝请求: {path}")
+
         trace_id = trace_id_var.get() or new_trace_id()
+        tiered_timeout = _classify_timeout(path)
         attempt, last_err = 0, None
         max_attempt = (self._retries + 1) if retryable else 1
         started = time.perf_counter()
@@ -87,28 +171,43 @@ class FiberBackendClient:
             attempt += 1
             status, err = None, None
             try:
-                client = await self._get_client()
+                client = await self._get_client(timeout=tiered_timeout)
                 resp = await client.request(
                     method, path, params=params, json=json_body,
                     headers={"X-Trace-Id": trace_id},
                 )
                 status = resp.status_code
+
+                # 重试决策树：4xx不重试, 5xx退避, 超时重试1次
                 if status == 404:
+                    self._circuit.record_success()
                     raise NotFound(f"资源不存在: {path}", status=404)
+                if 400 <= status < 500:
+                    # 4xx 客户端错误：不重试
+                    self._circuit.record_success()
+                    raise BackendError(f"客户端错误 {status}", status=status)
                 if status >= 500:
                     raise BackendError(f"后端错误 {status}: {path}", status=status)
+
                 resp.raise_for_status()
                 self._mark_up()
+                self._circuit.record_success()
                 return resp.json()
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 err = f"连接失败: {e.__class__.__name__}"
                 last_err = BackendUnavailable(err)
                 self._mark_down()
+                self._circuit.record_failure()
+                # 超时仅重试1次
+                if isinstance(e, httpx.TimeoutException) and attempt > 1:
+                    break
             except NotFound:
                 raise
             except BackendError as e:
                 last_err = e
                 err = str(e)
+                if e.status and e.status >= 500:
+                    self._circuit.record_failure()
             except httpx.HTTPError as e:
                 last_err = BackendError(str(e))
                 err = str(e)
@@ -125,6 +224,8 @@ class FiberBackendClient:
                     "params": params, "attempt": attempt,
                     "status": status or "ERR", "error": err,
                     "elapsed_ms": round(elapsed, 2),
+                    "circuit": self._circuit.state,
+                    "timeout_tier": tiered_timeout,
                 })
             # 指数退避：0.3s → 0.6s
             if attempt < max_attempt:
@@ -141,7 +242,10 @@ class FiberBackendClient:
             ok = r.status_code == 200
         except httpx.HTTPError:
             ok = False
-        ok and self._mark_up() or self._mark_down()
+        if ok:
+            self._mark_up()
+        else:
+            self._mark_down()
         return ok
 
     def _mark_up(self) -> None:

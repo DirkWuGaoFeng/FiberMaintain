@@ -13,7 +13,7 @@ using namespace fiber::common;
 
 int main(int argc, char** argv) {
     std::string board_service_addr = "localhost:50051";
-    std::string topology_service_addr = "localhost:50052";
+    std::string topology_service_addr = "localhost:50062";
     
     if (argc > 1) {
         board_service_addr = argv[1];
@@ -33,43 +33,43 @@ int main(int argc, char** argv) {
     auto topology_channel = grpc::CreateChannel(topology_service_addr, grpc::InsecureChannelCredentials());
     auto topology_stub = TopologyService::NewStub(topology_channel);
     
-    std::cout << "--- 创建100个场景1 (有源盘→无源盘，单跳) ---" << std::endl;
+    std::cout << "--- 创建100个场景1 (有源盘→有源盘，单跳) ---" << std::endl;
     
     int scene1_count = 0;
     for (int i = 1; i <= 100; ++i) {
-        int32_t active_board_id = 10000 + i;
-        int32_t passive_board_id = 20000 + i;
+        int32_t active_board_id_a = 10000 + i;
+        int32_t active_board_id_b = 20000 + i;
         int32_t ne_id_a = 100 + (i / 10);
         int32_t ne_id_b = 200 + (i / 10);
         
         grpc::ClientContext ctx1;
         CreateBoardRequest board_req;
-        board_req.set_board_id(active_board_id);
+        board_req.set_board_id(active_board_id_a);
         board_req.set_board_type(BoardType::ACTIVE);
         board_req.set_ne_id(ne_id_a);
         CreateBoardResponse board_resp;
         
         auto status = board_stub->CreateBoard(&ctx1, board_req, &board_resp);
         if (!status.ok()) {
-            std::cout << "[WARN] 场景1-" << i << ": 创建有源盘失败: " << status.error_message() << std::endl;
+            std::cout << "[WARN] 场景1-" << i << ": 创建源端有源盘失败: " << status.error_message() << std::endl;
             continue;
         }
         
         grpc::ClientContext ctx2;
-        board_req.set_board_id(passive_board_id);
-        board_req.set_board_type(BoardType::PASSIVE);
+        board_req.set_board_id(active_board_id_b);
+        board_req.set_board_type(BoardType::ACTIVE);
         board_req.set_ne_id(ne_id_b);
         status = board_stub->CreateBoard(&ctx2, board_req, &board_resp);
         if (!status.ok()) {
-            std::cout << "[WARN] 场景1-" << i << ": 创建无源盘失败: " << status.error_message() << std::endl;
+            std::cout << "[WARN] 场景1-" << i << ": 创建宿端有源盘失败: " << status.error_message() << std::endl;
             continue;
         }
         
         grpc::ClientContext ctx3;
         CreateFiberRequest fiber_req;
-        fiber_req.set_src_board_id(active_board_id);
+        fiber_req.set_src_board_id(active_board_id_a);
         fiber_req.set_src_port_id(1);
-        fiber_req.set_dst_board_id(passive_board_id);
+        fiber_req.set_dst_board_id(active_board_id_b);
         fiber_req.set_dst_port_id(1);
         CreateFiberResponse fiber_resp;
         
@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
         if (status.ok() && fiber_resp.success()) {
             scene1_count++;
             if (i % 10 == 0) {
-                std::cout << "[INFO] 场景1-" << i << ": 有源盘(" << active_board_id << ") → 无源盘(" << passive_board_id << ") [OK] fiber_id=" << fiber_resp.fiber_id() << std::endl;
+                std::cout << "[INFO] 场景1-" << i << ": 有源盘(" << active_board_id_a << ") → 有源盘(" << active_board_id_b << ") [OK] fiber_id=" << fiber_resp.fiber_id() << std::endl;
             }
         } else {
             std::cout << "[WARN] 场景1-" << i << ": 创建连纤失败: " << status.error_message() << std::endl;
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
     std::cout << std::endl << "场景1创建完成: " << scene1_count << "/100" << std::endl;
     std::cout << std::endl;
     
-    std::cout << "--- 创建100个场景2 (有源盘→无源盘→有源盘，两跳) ---" << std::endl;
+    std::cout << "--- 创建100个场景2 (有源盘→无源盘→无源盘→有源盘，两跳) ---" << std::endl;
     
     int scene2_count = 0;
     for (int i = 1; i <= 100; ++i) {

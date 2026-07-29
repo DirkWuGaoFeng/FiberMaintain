@@ -1,10 +1,12 @@
 """Tool 注册器：装饰器自动构建 OpenAI function schema。"""
 from __future__ import annotations
-import asyncio, inspect, typing, time
+import asyncio, inspect, logging, typing, time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable
 
 from src.monitoring.metrics import TOOL_CALLS, TOOL_ERRORS
+
+logger = logging.getLogger("fiber.tool")
 
 _TYPE_MAP = {
     int: "integer", float: "number", str: "string", bool: "boolean",
@@ -28,18 +30,27 @@ class Tool:
 
     async def ainvoke(self, **kwargs: Any) -> Any:
         started = time.perf_counter()
+        logger.info("[Tool] 调用 %s args=%s", self.name,
+                    {k: (str(v)[:100] if not isinstance(v, str) else v[:100]) for k, v in kwargs.items()})
         try:
             result = self.fn(**kwargs)
             if inspect.isawaitable(result):
                 result = await result
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            result_preview = str(result)[:200] if result else "None"
+            logger.info("[Tool] %s 完成 result_len=%d elapsed=%.0fms preview=%.200s",
+                        self.name, len(str(result)), elapsed_ms, result_preview)
             TOOL_CALLS.labels(tool=self.name, status="ok").inc()
             return result
-        except Exception:
+        except Exception as e:
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            logger.error("[Tool] %s 异常 elapsed=%.0fms error=%s",
+                         self.name, elapsed_ms, e, exc_info=True)
             TOOL_CALLS.labels(tool=self.name, status="error").inc()
             TOOL_ERRORS.labels(tool=self.name).inc()
             raise
         finally:
-            _ = time.perf_counter() - started  # 延迟由 MCP 层记录
+            pass  # 延迟已在上方记录
 
 
 _REGISTRY: dict[str, Tool] = {}
@@ -111,5 +122,6 @@ def tool_schemas(names: list[str]) -> list[dict]:
 async def execute_tool(name: str, args: dict) -> Any:
     t = _REGISTRY.get(name)
     if t is None:
+        logger.error("[Tool] 未注册的工具: %s", name)
         raise KeyError(f"未注册的工具: {name}")
     return await asyncio.wait_for(t.ainvoke(**args), timeout=30)

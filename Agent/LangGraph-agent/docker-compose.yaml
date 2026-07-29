@@ -1,0 +1,163 @@
+version: "3.8"
+
+services:
+  # ============================================================
+  # LLM Inference (Ollama)
+  # ============================================================
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============================================================
+  # RAG Vector Database (ChromaDB)
+  # ============================================================
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8100:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============================================================
+  # C++ Backend (API Gateway + gRPC Microservices)
+  # ============================================================
+  fiber-backend:
+    build:
+      context: ../../Services
+      dockerfile: ../LangGraph-agent/docker/Dockerfile.backend
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      - API_GATEWAY_PORT=8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # LangGraph Agent Application
+  # ============================================================
+  langgraph-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - FIBER_BACKEND_URL=http://fiber-backend:8080
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      - CHROMA_PERSIST_DIR=/app/data/chromadb
+      - CHECKPOINT_DB=/app/data/checkpoints.db
+      - MEMORY_DB=/app/data/memory.db
+      - AGENT_HOST=0.0.0.0
+      - AGENT_PORT=8000
+    volumes:
+      - agent_data:/app/data
+    depends_on:
+      ollama:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+      fiber-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # LangGraph Studio (Development Only)
+  # ============================================================
+  langgraph-studio:
+    image: langchain/langgraph-studio:latest
+    ports:
+      - "8123:8080"
+    environment:
+      - LANGGRAPH_URL=http://langgraph-app:8000
+    depends_on:
+      - langgraph-app
+    profiles:
+      - dev
+
+  # ============================================================
+  # Observability: LangFuse (Open Source)
+  # ============================================================
+  langfuse:
+    image: langfuse/langfuse:2
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      - NEXTAUTH_SECRET=mysecret
+      - NEXTAUTH_URL=http://localhost:3000
+      - SALT=mysalt
+    depends_on:
+      - langfuse-db
+    profiles:
+      - observability
+
+  langfuse-db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=langfuse
+      - POSTGRES_PASSWORD=langfuse
+      - POSTGRES_DB=langfuse
+    volumes:
+      - langfuse_db:/var/lib/postgresql/data
+    profiles:
+      - observability
+
+  # ============================================================
+  # Monitoring: Prometheus + Grafana
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+volumes:
+  ollama_data:
+  chroma_data:
+  agent_data:
+  langfuse_db:
+  prometheus_data:
+  grafana_data:

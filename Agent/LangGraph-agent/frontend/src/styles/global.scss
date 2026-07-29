@@ -1,0 +1,47 @@
+/* Global styles for Fiber Maintenance Agent Frontend */
+@import './hud-theme.scss';
+
+/* Element Plus dark theme overrides */
+.el-card {
+  background: var(--panel) !important;
+  border-color: var(--line) !important;
+  color: var(--tx) !important;
+}
+
+.el-table {
+  --el-table-bg-color: var(--panel) !important;
+  --el-table-tr-bg-color: var(--panel) !important;
+  --el-table-header-bg-color: rgba(63, 208, 255, .06) !important;
+  --el-table-row-hover-bg-color: rgba(63, 208, 255, .08) !important;
+  --el-table-text-color: var(--tx) !important;
+  --el-table-border-color: var(--line) !important;
+}
+
+.el-input__wrapper {
+  background: #0a1524 !important;
+  box-shadow: 0 0 0 1px var(--line) inset !important;
+  color: var(--tx) !important;
+}
+
+.el-input__inner {
+  color: var(--tx) !important;
+}
+
+.el-button--primary {
+  background: linear-gradient(180deg, rgba(63, 208, 255, .25), rgba(63, 208, 255, .08)) !important;
+  border-color: rgba(63, 208, 255, .55) !important;
+  color: var(--cyan) !important;
+}
+
+.el-button--primary:hover {
+  background: linear-gradient(180deg, rgba(63, 208, 255, .35), rgba(63, 208, 255, .15)) !important;
+  box-shadow: 0 0 18px rgba(63, 208, 255, .4) !important;
+}
+
+.el-tag {
+  border-color: var(--line) !important;
+}
+
+.el-tag--dark {
+  background: var(--panel) !important;
+}

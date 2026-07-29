@@ -1,6 +1,6 @@
 app:
   name: fiber-maintenance-agent
-  version: 3.0.0
+  version: 3.2.1                   # Phase 3: Agent v3.2.1
   host: 0.0.0.0
   port: 8000
   log_dir: ./logs
@@ -14,37 +14,84 @@ backend:
   health_path: /health
   timeout_seconds: 5
   max_retries: 2
-  batch_limit: 100
+  batch_limit: 200                  # Phase 3.4: 批量上限提升至200
   down_threshold_seconds: 60      # 连续不可用超过该值 → 严重通知
 
 llm:
+  # ─ Provider 选择 ──
+  # ollama:            本地 Ollama 服务（支持 think=false 禁用思维链）
+  # openai_compatible: OpenAI 兼容 API（KIMI / DeepSeek / 通义千问等）
   provider: ollama
+
+  # ── Ollama 配置（provider=ollama 时生效）──
   base_url: ${OLLAMA_BASE_URL:http://localhost:11434}/v1
   api_key: ollama
-  model: qwen3.6
+  disable_think: true                  # 禁用 qwen3 thinking 模式（思维链导致延迟激增）
+
+  # ── 多模型配置（支持降级切换）──
+  models:
+    primary: qwen2.5:7b               # 主模型（高质量分析）
+    fallback: qwen2.5:3b              # 降级模型（主模型不可用时自动切换）
+    fast: qwen2.5:3b                # 快速模型（深度降级）
+  model: ${LLM_MODEL:qwen2.5:7b}     # 单模型模式兼容（models 不存在时回退）
+  context_window: 8192                 # 上下文窗口（tokens）
+  default_timeout: 30                  # 默认请求超时（秒）
+
+  # ── KIMI 配置示例（provider=openai_compatible 时启用）──
+  # provider: openai_compatible
+  # base_url: https://api.moonshot.cn/v1
+  # api_key: ${KIMI_API_KEY:sk-xxx}
+  # model: moonshot-v1-8k
+  # disable_think: false               # KIMI 无 thinking 模式，无需禁用
+
+  # ── DeepSeek 配置示例 ──
+  # provider: openai_compatible
+  # base_url: https://api.deepseek.com/v1
+  # api_key: ${DEEPSEEK_API_KEY:sk-xxx}
+  # model: deepseek-chat
+
+  # ── 通义千问 配置示例 ──
+  # provider: openai_compatible
+  # base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  # api_key: ${DASHSCOPE_API_KEY:sk-xxx}
+  # model: qwen-plus
   profiles:
     primary:  { temperature: 0.3, max_tokens: 4096 }
     fallback: { temperature: 0.5, max_tokens: 2048 }
-    fast:     { temperature: 0.1, max_tokens: 1024 }
+    fast:     { temperature: 0.1, max_tokens: 512 }
   degradation:
     failure_threshold: 3          # 连续失败 3 次降级
     recovery_seconds: 60          # 熔断 60s 后半开
 
 agents:
   lead:
-    max_iterations: 10
+    max_iterations: 6
+    temperature: 0.0                  # §5.1: 任务分解需确定性
   subagents:
     max_concurrent: 5
     queue_strategy: FIFO
-    task_timeout_seconds: 15
-    batch_timeout_seconds: 30
-    max_iterations: 6
+    task_timeout_seconds: 180
+    batch_timeout_seconds: 90
+    max_iterations: 4
+    # Phase 3.1: Sub-Agent 温度参数
+    data_collector:
+      temperature: 0.0
+      top_p: 1.0                      # §5.1: 纯工具调用
+    analysis_expert:
+      temperature: 0.1
+      top_p: 0.3
+    knowledge_assistant:
+      temperature: 0.5
+      top_p: 0.9
+    report_generator:
+      temperature: 0.3
+      top_p: 0.9
 
 rag:
   chromadb_path: ./data/chroma
   collection_prefix: fiber_kb
-  embedding_model: BAAI/bge-large-zh-v1.5
-  reranker_model: BAAI/bge-reranker-v2-m3
+  embedding_model: nomic-embed-text    # Ollama 本地部署
+  reranker_model: nomic-embed-text     # Ollama 本地部署（轻量 reranker 降级）
   chunk_size: 512
   chunk_overlap: 50
   vector_top_k: 10
@@ -82,3 +129,32 @@ plugins:
 knowledge:
   pending_dir: ./data/kb_pending
   approved_dir: ./knowledge_base
+
+# Phase 4: 高级特性配置
+observability:
+  traces_db: ./logs/traces.db
+  trace_ttl_days: 7
+  metrics_window_seconds: 60
+  structured_log_file: ./logs/app_structured.jsonl
+  log_retention_days: 7
+
+prompt_management:
+  audit_db: ./logs/prompt_audit.db
+  ab_test_enabled: false
+  ab_test_traffic_ratio: 0.10
+
+context_budget:
+  total_tokens: 8192
+  fixed_tokens: 1300
+  output_reserve: 2000
+  p1_data: 3000
+  p2_rag: 1000
+  p3_memory: 500
+
+batch_engine:
+  chunk_size: 50
+  cursor_ttl_seconds: 300
+  max_concurrent: 5
+  backpressure_high_threshold: 0.10
+  backpressure_low_threshold: 0.03
+  backpressure_recovery_seconds: 60

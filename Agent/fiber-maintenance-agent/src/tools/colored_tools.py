@@ -5,9 +5,10 @@ from src.mcp import backend
 @tool(name="colored_fibers_query", tags=["color"])
 async def colored_fibers_query(color: str) -> dict:
     """按颜色查询有颜色连纤列表（含后端判定的场景类型与情况分类）。
+    注意：参数为颜色字符串，不是 fiber_id！
 
     Args:
-        color: 颜色，RED（紧急）或 YELLOW（次要）
+        color: 颜色字符串，仅接受 "RED"（紧急）或 "YELLOW"（次要）
     """
     return await backend.get_colored(color)
 

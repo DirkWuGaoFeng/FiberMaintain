@@ -1,0 +1,9 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "fiber_agent": "./src/graph/main_graph.py:build_main_graph"
+  },
+  "env": ".env",
+  "python_version": "3.11",
+  "dockerfile_lines": []
+}

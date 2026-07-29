@@ -1,0 +1,12 @@
+# 知识库占位文件
+# 请将以下 6 类文档放入对应目录：
+#
+# device_manual/       - 设备操作手册
+# maintenance_guide/   - 维护保养指南
+# alarm_guide/         - 告警处理指南
+# fault_cases/         - 故障案例库
+# threshold_standard/  - 阈值标准文档
+# ne_config/           - 网元配置文档
+#
+# 支持格式: .txt, .md, .json
+# 导入命令: make ingest-kb

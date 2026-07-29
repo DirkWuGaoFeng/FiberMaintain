@@ -1,6 +1,6 @@
 """FastAPI 入口：对话(SSE) / 报告下载 / 知识库管理 / 插件 / 监控 / 健康检查。"""
 from __future__ import annotations
-import asyncio, json, logging, shutil, uuid
+import asyncio, json, logging, shutil, time, uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -22,16 +22,28 @@ from src.plugins.sdk import (discover_plugins, reload_plugins, list_plugins,
 from src.rag.engine import rag_engine
 from src.rag.ingest import ingest_file, DIR_COLLECTION
 from src.monitoring.metrics import BACKEND_UP
+from src.monitoring.observability import get_observability
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(f"{settings.app['log_dir']}/app.log",
-                            encoding="utf-8"),
-    ])
+# ── 日志配置（显式挂载到 fiber 命名空间，兼容 uvicorn 已配置 root logger 的场景） ──
+_LOG_FMT = logging.Formatter("%(asctime)s [%(name)s] %(levelname)s %(message)s")
+_fiber_logger = logging.getLogger("fiber")
+_fiber_logger.setLevel(logging.INFO)
+_fiber_logger.propagate = False
+if not _fiber_logger.handlers:
+    _sh = logging.StreamHandler()
+    _sh.setFormatter(_LOG_FMT)
+    _fiber_logger.addHandler(_sh)
+    _fh = logging.FileHandler(f"{settings.app['log_dir']}/app.log",
+                              encoding="utf-8")
+    _fh.setFormatter(_LOG_FMT)
+    _fiber_logger.addHandler(_fh)
 logger = logging.getLogger("fiber.main")
+
+
+def _flush_logs() -> None:
+    """强制 flush 所有 fiber logger 的 handler，确保日志立即落盘。"""
+    for h in logging.getLogger("fiber").handlers:
+        h.flush()
 
 
 # ───────────────────────── 后台任务 ─────────────────────────
@@ -96,10 +108,64 @@ async def chat(req: Request):
     if not message:
         raise HTTPException(400, "message 不能为空")
 
+    logger.info("[Chat] 收到请求 session_id=%s message_len=%d message=%.80s",
+                session_id, len(message), message[:80])
+    _flush_logs()
+
+    obs = get_observability(settings.app["log_dir"])
+
     async def event_stream():
+        trace_id = obs.start_trace("chat")
+        t0 = time.perf_counter()
+        obs.metrics.inc("chat_request")
+        # 手动创建 span（避免 with 在 async generator 中过早退出）
+        span = obs.span("orchestrator.run", attributes={"session_id": session_id, "message_len": len(message)})
+        span.__enter__()
+        event_count = 0
         yield f"data: {json.dumps({'type': 'session', 'session_id': session_id}, ensure_ascii=False)}\n\n"
-        async for ev in orchestrator.run(session_id, message):
-            yield f"data: {json.dumps(ev, ensure_ascii=False, default=str)}\n\n"
+        try:
+            async for ev in orchestrator.run(session_id, message):
+                event_count += 1
+                ev_type = ev.get("type", "unknown")
+                # 记录关键事件
+                if ev_type == "token":
+                    logger.debug("[Chat][%s] token len=%d", session_id, len(ev.get("content", "")))
+                elif ev_type == "tool_call":
+                    logger.info("[Chat][%s] tool_call tool=%s", session_id, ev.get("tool"))
+                elif ev_type == "tool_result":
+                    logger.info("[Chat][%s] tool_result tool=%s content_len=%d",
+                                session_id, ev.get("tool"), len(ev.get("content", "")))
+                elif ev_type == "subagent":
+                    logger.info("[Chat][%s] subagent agent=%s", session_id, ev.get("agent"))
+                elif ev_type == "thought":
+                    logger.info("[Chat][%s] thought: %.100s", session_id, ev.get("content", "")[:100])
+                elif ev_type == "warning":
+                    logger.warning("[Chat][%s] warning: %.100s", session_id, ev.get("content", "")[:100])
+                elif ev_type == "error":
+                    logger.error("[Chat][%s] error: %.200s", session_id, ev.get("content", "")[:200])
+                elif ev_type == "done":
+                    logger.info("[Chat][%s] done elapsed_ms=%s", session_id, ev.get("elapsed_ms"))
+                # 捕获 sub-agent 调用事件，记录指标
+                if ev_type == "subagent":
+                    agent_name = ev.get("agent", "unknown")
+                    obs.metrics.inc(f"subagent_{agent_name}")
+                yield f"data: {json.dumps(ev, ensure_ascii=False, default=str)}\n\n"
+            obs.end_trace(trace_id, "ok")
+            obs.metrics.inc("trace_ok")
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            logger.info("[Chat] 完成 session_id=%s events=%d elapsed=%.0fms",
+                        session_id, event_count, elapsed_ms)
+            _flush_logs()
+        except Exception as e:
+            obs.end_trace(trace_id, "error")
+            obs.metrics.inc("trace_error")
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            logger.error("[Chat] 异常 session_id=%s elapsed=%.0fms error=%s",
+                         session_id, elapsed_ms, e, exc_info=True)
+            raise
+        finally:
+            span.__exit__(None, None, None)  # 记录 span
+            obs.record_latency("chat_latency", (time.perf_counter() - t0) * 1000)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(),
@@ -258,96 +324,192 @@ async def status():
     }
 
 
+# ───────────────────────── 可观测性 API (§17.6.2 运行看板) ─────────────────────────
+@app.get("/api/v1/observability/metrics")
+async def obs_metrics():
+    """返回当前指标快照（请求数/延迟/错误率/Sub-Agent分布）。"""
+    obs = get_observability(settings.app["log_dir"])
+    snapshot = obs.metrics.snapshot()
+    # 附加 LLM 状态
+    backend_ok = await backend.health()
+    return {
+        "metrics": snapshot,
+        "system": {
+            "backend_up": backend_ok,
+            "offline_mode": backend.offline,
+            "llm_model": settings.llm.get("model", "unknown"),
+            "embedding_model": settings.rag.get("embedding_model", "unknown"),
+            "version": settings.app["version"],
+        },
+    }
+
+
+@app.get("/api/v1/observability/traces")
+async def obs_traces(limit: int = 20):
+    """返回最近 N 条 trace 记录。"""
+    obs = get_observability(settings.app["log_dir"])
+    import sqlite3
+    try:
+        conn = sqlite3.connect(obs.trace_store._db)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT trace_id, start_time, end_time, operation, status "
+            "FROM traces ORDER BY start_time DESC LIMIT ?", (limit,)
+        ).fetchall()
+        conn.close()
+        return {"traces": [dict(r) for r in rows]}
+    except Exception as e:
+        return {"traces": [], "error": str(e)}
+
+
+@app.get("/api/v1/observability/traces/{trace_id}")
+async def obs_trace_detail(trace_id: str):
+    """返回指定 trace 的所有 span。"""
+    obs = get_observability(settings.app["log_dir"])
+    spans = obs.trace_store.get_trace(trace_id)
+    return {"trace_id": trace_id, "spans": spans}
+
+
 # ───────────────────────── 光纤数据代理（前端 → C++后端） ─────────────────────────
 @app.get("/api/v1/fibers/stats/realtime")
 async def proxy_stats_realtime():
+    logger.debug("[Proxy] GET /fibers/stats/realtime")
     try:
-        return await backend.get_stats_realtime()
+        result = await backend.get_stats_realtime()
+        logger.debug("[Proxy] /fibers/stats/realtime -> ok")
+        return result
     except BackendUnavailable as e:
+        logger.error("[Proxy] /fibers/stats/realtime BackendUnavailable: %s", e)
         raise HTTPException(503, str(e))
     except Exception as e:
+        logger.error("[Proxy] /fibers/stats/realtime error: %s", e)
         raise HTTPException(500, str(e))
 
 @app.get("/api/v1/fibers/stats/trend")
 async def proxy_stats_trend(start_time: str, end_time: str):
+    logger.debug("[Proxy] GET /fibers/stats/trend start=%s end=%s", start_time, end_time)
     try:
-        return await backend.get_stats_trend(start_time, end_time)
+        result = await backend.get_stats_trend(start_time, end_time)
+        logger.debug("[Proxy] /fibers/stats/trend -> ok")
+        return result
     except BackendUnavailable as e:
+        logger.error("[Proxy] /fibers/stats/trend BackendUnavailable: %s", e)
         raise HTTPException(503, str(e))
     except Exception as e:
+        logger.error("[Proxy] /fibers/stats/trend error: %s", e)
         raise HTTPException(500, str(e))
 
 @app.get("/api/v1/fibers/colored")
 async def proxy_colored_fibers(color: str):
+    logger.debug("[Proxy] GET /fibers/colored color=%s", color)
     try:
-        return await backend.get_colored(color)
+        result = await backend.get_colored(color)
+        logger.debug("[Proxy] /fibers/colored -> ok")
+        return result
     except ValueError as e:
+        logger.warning("[Proxy] /fibers/colored ValueError: %s", e)
         raise HTTPException(400, str(e))
     except BackendUnavailable as e:
+        logger.error("[Proxy] /fibers/colored BackendUnavailable: %s", e)
         raise HTTPException(503, str(e))
     except Exception as e:
+        logger.error("[Proxy] /fibers/colored error: %s", e)
         raise HTTPException(500, str(e))
 
 @app.get("/api/v1/fibers/colored/all")
 async def proxy_all_colored_fibers():
+    logger.debug("[Proxy] GET /fibers/colored/all")
     try:
-        return await backend.get_all_colored()
+        result = await backend.get_all_colored()
+        logger.debug("[Proxy] /fibers/colored/all -> ok")
+        return result
     except BackendUnavailable as e:
+        logger.error("[Proxy] /fibers/colored/all BackendUnavailable: %s", e)
         raise HTTPException(503, str(e))
     except Exception as e:
+        logger.error("[Proxy] /fibers/colored/all error: %s", e)
         raise HTTPException(500, str(e))
 
 @app.get("/api/v1/fibers/{fiber_id}/performance")
 async def proxy_fiber_performance(fiber_id: int):
+    logger.debug("[Proxy] GET /fibers/%d/performance", fiber_id)
     try:
-        return await backend.get_performance(fiber_id)
+        result = await backend.get_performance(fiber_id)
+        logger.debug("[Proxy] /fibers/%d/performance -> ok", fiber_id)
+        return result
     except ValueError as e:
+        logger.warning("[Proxy] /fibers/%d/performance ValueError: %s", fiber_id, e)
         raise HTTPException(400, str(e))
     except BackendUnavailable as e:
+        logger.error("[Proxy] /fibers/%d/performance BackendUnavailable: %s", fiber_id, e)
         raise HTTPException(503, str(e))
     except Exception as e:
+        logger.error("[Proxy] /fibers/%d/performance error: %s", fiber_id, e)
         raise HTTPException(500, str(e))
 
 @app.get("/api/v1/fibers/{fiber_id}/spanloss")
 async def proxy_fiber_spanloss(fiber_id: int):
+    logger.debug("[Proxy] GET /fibers/%d/spanloss", fiber_id)
     try:
-        return await backend.get_spanloss(fiber_id)
+        result = await backend.get_spanloss(fiber_id)
+        logger.debug("[Proxy] /fibers/%d/spanloss -> ok", fiber_id)
+        return result
     except ValueError as e:
+        logger.warning("[Proxy] /fibers/%d/spanloss ValueError: %s", fiber_id, e)
         raise HTTPException(400, str(e))
     except BackendUnavailable as e:
+        logger.error("[Proxy] /fibers/%d/spanloss BackendUnavailable: %s", fiber_id, e)
         raise HTTPException(503, str(e))
     except Exception as e:
+        logger.error("[Proxy] /fibers/%d/spanloss error: %s", fiber_id, e)
         raise HTTPException(500, str(e))
 
 @app.get("/api/v1/alarms/current")
 async def proxy_current_alarms(board_id: int | None = None, port_id: int | None = None):
+    logger.debug("[Proxy] GET /alarms/current board_id=%s port_id=%s", board_id, port_id)
     try:
-        return await backend.get_alarms(board_id, port_id)
+        result = await backend.get_alarms(board_id, port_id)
+        logger.debug("[Proxy] /alarms/current -> ok")
+        return result
     except BackendUnavailable as e:
+        logger.error("[Proxy] /alarms/current BackendUnavailable: %s", e)
         raise HTTPException(503, str(e))
     except Exception as e:
+        logger.error("[Proxy] /alarms/current error: %s", e)
         raise HTTPException(500, str(e))
 
 @app.get("/api/v1/topology/fibers/{fiber_id}")
 async def proxy_fiber_topology(fiber_id: int):
+    logger.debug("[Proxy] GET /topology/fibers/%d", fiber_id)
     try:
-        return await backend.get_fiber(fiber_id)
+        result = await backend.get_fiber(fiber_id)
+        logger.debug("[Proxy] /topology/fibers/%d -> ok", fiber_id)
+        return result
     except ValueError as e:
+        logger.warning("[Proxy] /topology/fibers/%d ValueError: %s", fiber_id, e)
         raise HTTPException(400, str(e))
     except BackendUnavailable as e:
+        logger.error("[Proxy] /topology/fibers/%d BackendUnavailable: %s", fiber_id, e)
         raise HTTPException(503, str(e))
     except Exception as e:
+        logger.error("[Proxy] /topology/fibers/%d error: %s", fiber_id, e)
         raise HTTPException(500, str(e))
 
 @app.get("/api/v1/topology/fibers/{fiber_id}/scene")
 async def proxy_fiber_scene(fiber_id: int):
+    logger.debug("[Proxy] GET /topology/fibers/%d/scene", fiber_id)
     try:
-        return await backend.get_fiber_scene(fiber_id)
+        result = await backend.get_fiber_scene(fiber_id)
+        logger.debug("[Proxy] /topology/fibers/%d/scene -> ok", fiber_id)
+        return result
     except ValueError as e:
+        logger.warning("[Proxy] /topology/fibers/%d/scene ValueError: %s", fiber_id, e)
         raise HTTPException(400, str(e))
     except BackendUnavailable as e:
+        logger.error("[Proxy] /topology/fibers/%d/scene BackendUnavailable: %s", fiber_id, e)
         raise HTTPException(503, str(e))
     except Exception as e:
+        logger.error("[Proxy] /topology/fibers/%d/scene error: %s", fiber_id, e)
         raise HTTPException(500, str(e))
 
 
@@ -355,24 +517,34 @@ async def proxy_fiber_scene(fiber_id: int):
 @app.websocket("/ws/v1/events")
 async def ws_proxy(websocket: WebSocket):
     await websocket.accept()
+    logger.info("[WS] 前端 WebSocket 已连接")
     ws_url = settings.backend["ws_url"].replace("ws://", "ws://")
-    async with websockets.connect(ws_url + "/ws/v1/events") as backend_ws:
-        async def forward_from_backend():
-            async for message in backend_ws:
-                await websocket.send_text(message)
+    try:
+        async with websockets.connect(ws_url + "/ws/v1/events") as backend_ws:
+            logger.info("[WS] 后端 WebSocket 已连接 url=%s", ws_url)
 
-        async def forward_from_frontend():
-            while True:
-                data = await websocket.receive_text()
-                await backend_ws.send(data)
+            async def forward_from_backend():
+                async for message in backend_ws:
+                    logger.debug("[WS] 后端→前端 msg_len=%d", len(message))
+                    await websocket.send_text(message)
 
-        task1 = asyncio.create_task(forward_from_backend())
-        task2 = asyncio.create_task(forward_from_frontend())
+            async def forward_from_frontend():
+                while True:
+                    data = await websocket.receive_text()
+                    logger.debug("[WS] 前端→后端 msg_len=%d", len(data))
+                    await backend_ws.send(data)
 
-        try:
-            await asyncio.gather(task1, task2)
-        except Exception:
-            pass
+            task1 = asyncio.create_task(forward_from_backend())
+            task2 = asyncio.create_task(forward_from_frontend())
+
+            try:
+                await asyncio.gather(task1, task2)
+            except Exception as e:
+                logger.info("[WS] 连接断开: %s", e)
+    except Exception as e:
+        logger.error("[WS] 后端连接失败: %s", e)
+    finally:
+        logger.info("[WS] 前端 WebSocket 已断开")
 
 
 # ───────────────────────── 辅助 ─────────────────────────

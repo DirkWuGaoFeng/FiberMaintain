@@ -15,29 +15,42 @@ export const reviewKbDoc = (id, data) => api.post(`/knowledge/docs/${id}/review`
 export const deleteKbDoc = (id) => api.delete(`/knowledge/docs/${id}`)
 export const getStatus = () => api.get('/status')
 
+// 可观测性 API (§17.6.2 运行看板)
+export const getObsMetrics = () => api.get('/observability/metrics')
+export const getObsTraces = (limit = 20) => api.get('/observability/traces', { params: { limit } })
+export const getObsTraceDetail = (traceId) => api.get(`/observability/traces/${traceId}`)
+
 export const sendChatMessage = async (message, onEvent) => {
-  return new Promise((resolve, reject) => {
-    const eventSource = new EventSource('/api/v1/chat?message=' + encodeURIComponent(message))
-    
-    eventSource.onmessage = (event) => {
-      if (event.data === '[DONE]') {
-        eventSource.close()
-        resolve()
-      } else {
-        try {
-          const data = JSON.parse(event.data)
-          if (onEvent) onEvent(data)
-        } catch (e) {
-          console.error('SSE parse error:', e)
-        }
+  const resp = await fetch('/api/v1/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  })
+  if (!resp.ok || !resp.body) {
+    throw new Error(`Chat request failed: ${resp.status}`)
+  }
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() // keep incomplete line in buffer
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data: ')) continue
+      const payload = trimmed.slice(6)
+      if (payload === '[DONE]') return
+      try {
+        const data = JSON.parse(payload)
+        if (onEvent) onEvent(data)
+      } catch (e) {
+        console.error('SSE parse error:', e)
       }
     }
-    
-    eventSource.onerror = (error) => {
-      eventSource.close()
-      reject(error)
-    }
-  })
+  }
 }
 
 export default api

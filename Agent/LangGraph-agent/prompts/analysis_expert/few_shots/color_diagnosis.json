@@ -1,0 +1,40 @@
+{
+  "description": "颜色诊断 Few-Shot 示例",
+  "examples": [
+    {
+      "input": {
+        "fiber_id": "FIB-005",
+        "current_color": "red",
+        "previous_color": "green",
+        "color_change_time": "2025-03-20T14:30:00",
+        "performance_before": {
+          "spanloss_db": 0.28,
+          "attenuation_db_km": 0.20,
+          "orl_db": 45
+        },
+        "performance_after": {
+          "spanloss_db": 1.25,
+          "attenuation_db_km": 0.45,
+          "orl_db": 30
+        },
+        "related_fibers": ["FIB-006", "FIB-007"]
+      },
+      "expected_output": {
+        "summary": "FIB-005 于 3 月 20 日由绿变红，跨段损耗从 0.28dB 骤升至 1.25dB，判断为光纤物理损伤或接头脱落。",
+        "findings": [
+          "颜色变化时刻性能指标突变：spanloss 增长 346%，衰减系数增长 125%",
+          "ORL 从 45dB 下降至 30dB，表明反射事件增加",
+          "同路由 FIB-006、FIB-007 未受影响，排除外力施工等共因"
+        ],
+        "severity": "critical",
+        "recommendations": [
+          "立即安排 OTDR 测试定位故障点",
+          "检查故障点处光纤是否有外力损伤",
+          "如为接头问题，重新熔接或更换连接器",
+          "修复后进行全程 OTDR 测试确认"
+        ],
+        "confidence": 0.92
+      }
+    }
+  ]
+}

@@ -35,6 +35,11 @@ class Settings:
         self.notify = self._cfg["notify"]
         self.plugins = self._cfg["plugins"]
         self.knowledge = self._cfg["knowledge"]
+        # Phase 4: 高级特性（可选键）
+        self.observability = self._cfg.get("observability", {})
+        self.prompt_management = self._cfg.get("prompt_management", {})
+        self.context_budget = self._cfg.get("context_budget", {})
+        self.batch_engine = self._cfg.get("batch_engine", {})
         # 目录预创建
         for d in (self.app["log_dir"], self.app["report_dir"],
                   self.app["data_dir"], self.knowledge["pending_dir"]):

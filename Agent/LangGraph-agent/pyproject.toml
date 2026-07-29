@@ -1,0 +1,70 @@
+[project]
+name = "fiber-maintenance-agent"
+version = "5.0.0"
+description = "Fiber Maintenance Intelligent Agent System based on LangChain + LangGraph"
+requires-python = ">=3.11"
+readme = "README.md"
+
+dependencies = [
+    # LangChain core
+    "langchain>=0.3.27",
+    "langchain-core>=0.3.60",
+    "langchain-community>=0.3.20",
+    "langchain-ollama>=0.3.0",
+    "langchain-chroma>=0.2.0",
+    # LangGraph core
+    "langgraph>=1.0.8",
+    "langgraph-checkpoint-sqlite>=2.0.0",
+    # LangServe (API exposure)
+    "langserve>=0.3.0",
+    # Web framework
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    # HTTP client
+    "httpx>=0.28.0",
+    # RAG
+    "chromadb>=0.6.0",
+    "sentence-transformers>=3.4.0",
+    "rank-bm25>=0.2.2",
+    # Export
+    "reportlab>=4.3.0",
+    "openpyxl>=3.1.0",
+    "matplotlib>=3.10.0",
+    # Observability
+    "langsmith>=0.3.0",
+    "prometheus-client>=0.21.0",
+    # Data
+    "pydantic>=2.10.0",
+    "aiosqlite>=0.20.0",
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "tiktoken>=0.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

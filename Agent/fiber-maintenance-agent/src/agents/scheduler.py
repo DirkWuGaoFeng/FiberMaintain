@@ -59,12 +59,25 @@ async def dispatch_subagent(name: str, instruction: str,
                             context: str = "") -> str:
     """FIFO 派遣 Sub-Agent，带单任务超时（15s）。"""
     from .sub_agents import run_subagent
+    import time
     timeout = settings.agents["subagents"]["task_timeout_seconds"]
+    queue_len = len(get_semaphore()._waiters)
+    logger.info("[Scheduler] 派遣 %s queue=%d timeout=%ss",
+                name, queue_len, timeout)
+    t0 = time.perf_counter()
     async with get_semaphore():
-        logger.info("派遣 sub-agent: %s", name)
+        wait_ms = (time.perf_counter() - t0) * 1000
+        if wait_ms > 50:
+            logger.info("[Scheduler] %s 排队等待 %.0fms", name, wait_ms)
         try:
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 run_subagent(name, instruction, context), timeout=timeout)
+            elapsed = (time.perf_counter() - t0) * 1000
+            logger.info("[Scheduler] %s 完成 result_len=%d total=%.0fms",
+                        name, len(result), elapsed)
+            return result
         except asyncio.TimeoutError:
-            logger.error("sub-agent %s 超时（%ss）", name, timeout)
+            elapsed = (time.perf_counter() - t0) * 1000
+            logger.error("[Scheduler] %s 超时 total=%.0fms timeout=%ss",
+                         name, elapsed, timeout)
             return f"[{name}] 执行超时（>{timeout}s），该子任务已跳过。"

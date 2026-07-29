@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> port_dist(0, ports.size() - 1);
     std::uniform_int_distribution<> level_dist(1, 2);
-    std::uniform_int_distribution<> duration_dist(2000, 10000);
+    std::uniform_int_distribution<> duration_dist(60000, 120000);
     
     std::cout << std::endl << "--- 开始模拟告警 (按Ctrl+C停止) ---" << std::endl;
     

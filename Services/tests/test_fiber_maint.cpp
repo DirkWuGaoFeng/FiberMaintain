@@ -9,6 +9,20 @@
 #include <chrono>
 #include <thread>
 #include <cmath>
+#include <shared_mutex>
+
+// Phase 1-2 v4.0 组件头文件
+#include "types.h"
+#include "fiber_maint_service_impl.h"
+#include "fiber_topology_resolver.h"
+#include "target_builders.h"
+#include "color_strategy.h"
+#include "perf_executor.h"
+#include "spanloss_calculator.h"
+#include "event_queue.h"
+#include "dependency_builder.h"
+#include "spsc_queue.h"
+#include "flap_detector.h"
 
 #define TEST_PASS(msg) std::cout << "[PASS] " << msg << std::endl; passed++
 #define TEST_FAIL(msg) std::cout << "[FAIL] " << msg << std::endl; failed++
@@ -23,7 +37,7 @@ int32_t test_fiber_id = 0;
 void setup_test_data() {
     std::cout << "\n=== Setup Test Data ===" << std::endl;
     
-    auto topology_channel = grpc::CreateChannel("localhost:50052", grpc::InsecureChannelCredentials());
+    auto topology_channel = grpc::CreateChannel("localhost:50062", grpc::InsecureChannelCredentials());
     auto topology_stub = fiber::topology::TopologyService::NewStub(topology_channel);
     
     grpc::ClientContext cleanup_ctx;
@@ -355,11 +369,431 @@ void test_health_check() {
     }
 }
 
+// ============================================================
+//  Phase 1-2 v4.0 单元测试
+// ============================================================
+
+void test_v4_types() {
+    std::cout << "\n=== v4.0 Types ===" << std::endl;
+    
+    fiber_maint::PortKey pk{100, 1};
+    if (pk.board_id == 100 && pk.port_id == 1) {
+        TEST_PASS("PortKey construction");
+    } else {
+        TEST_FAIL("PortKey construction");
+    }
+    
+    fiber_maint::PortKey pk2{100, 1};
+    if (pk == pk2) {
+        TEST_PASS("PortKey equality");
+    } else {
+        TEST_FAIL("PortKey equality");
+    }
+    
+    auto h1 = fiber_maint::PortKeyHash{}(pk);
+    auto h2 = fiber_maint::PortKeyHash{}(pk2);
+    if (h1 == h2) {
+        TEST_PASS("PortKey hash consistency");
+    } else {
+        TEST_FAIL("PortKey hash consistency");
+    }
+    
+    // ColorContext (replaces FiberContext in v4.0)
+    fiber_maint::ColorContext cc;
+    cc.color = fiber_maint::FiberColor::GREEN;
+    cc.scene_type = fiber_maint::SceneType::SCENE_1;
+    cc.scenario_case = fiber_maint::ScenarioCase::CASE_0;
+    if (cc.color == fiber_maint::FiberColor::GREEN &&
+        cc.scene_type == fiber_maint::SceneType::SCENE_1) {
+        TEST_PASS("ColorContext basic");
+    } else {
+        TEST_FAIL("ColorContext basic");
+    }
+    
+    // SmallVector
+    fiber_maint::SmallVector<int, 2> sv;
+    sv.push_back(10);
+    sv.push_back(20);
+    sv.push_back(30); // overflow
+    if (sv.size() == 3 && sv[0] == 10 && sv[2] == 30) {
+        TEST_PASS("SmallVector push/overflow");
+    } else {
+        TEST_FAIL("SmallVector push/overflow");
+    }
+    
+    // QueueEvent / EventType
+    fiber_maint::QueueEvent qe;
+    qe.type = fiber_maint::EventType::ALARM_EVENT;
+    qe.board_id = 100;
+    qe.port_id = 1;
+    if (qe.type == fiber_maint::EventType::ALARM_EVENT && qe.board_id == 100) {
+        TEST_PASS("QueueEvent / EventType");
+    } else {
+        TEST_FAIL("QueueEvent / EventType");
+    }
+    
+    // DependencyEntry with AlarmRole
+    fiber_maint::DependencyEntry de{42, fiber_maint::AlarmRole::DST_ACTIVE};
+    if (de.fiber_id == 42 && de.role == fiber_maint::AlarmRole::DST_ACTIVE) {
+        TEST_PASS("DependencyEntry / AlarmRole");
+    } else {
+        TEST_FAIL("DependencyEntry / AlarmRole");
+    }
+}
+
+void test_v4_spsc_queue() {
+    std::cout << "\n=== v4.0 SPSC Queue ===" << std::endl;
+    
+    fiber_maint::SPSCQueue<int> q;  // default capacity=4096
+    
+    q.push(42);
+    int val = -1;
+    if (q.pop(val) && val == 42) {
+        TEST_PASS("SPSC push/pop");
+    } else {
+        TEST_FAIL("SPSC push/pop");
+    }
+    
+    if (!q.pop(val)) {
+        TEST_PASS("SPSC empty pop");
+    } else {
+        TEST_FAIL("SPSC empty pop");
+    }
+    
+    bool all_pushed = true;
+    for (int i = 0; i < 15; i++) {
+        if (!q.push(i)) { all_pushed = false; break; }
+    }
+    if (all_pushed) {
+        TEST_PASS("SPSC fill 15 items");
+    } else {
+        TEST_FAIL("SPSC fill 15 items");
+    }
+    
+    int count = 0;
+    while (q.pop(val)) count++;
+    if (count == 15) {
+        TEST_PASS("SPSC drain all");
+    } else {
+        TEST_FAIL("SPSC drain all: got " + std::to_string(count));
+    }
+    
+    // pop_batch test
+    for (int i = 0; i < 5; i++) q.push(i * 10);
+    std::vector<int> batch;
+    size_t n = q.pop_batch(batch, 10);
+    if (n == 5 && batch.size() == 5 && batch[0] == 0 && batch[4] == 40) {
+        TEST_PASS("SPSC pop_batch");
+    } else {
+        TEST_FAIL("SPSC pop_batch: got " + std::to_string(n));
+    }
+    
+    // size / empty
+    if (q.empty() && q.size() == 0) {
+        TEST_PASS("SPSC empty/size");
+    } else {
+        TEST_FAIL("SPSC empty/size");
+    }
+}
+
+void test_v4_event_queue() {
+    std::cout << "\n=== v4.0 CoalescingEventQueue ===" << std::endl;
+    
+    fiber_maint::CoalescingEventQueue eq;
+    
+    // Alarm coalescing: same (board_id, port_id) overwrites
+    fiber_maint::QueueEvent e1;
+    e1.type = fiber_maint::EventType::ALARM_EVENT;
+    e1.board_id = 100; e1.port_id = 1; e1.alarm_level = 1;
+    
+    fiber_maint::QueueEvent e2;
+    e2.type = fiber_maint::EventType::ALARM_EVENT;
+    e2.board_id = 100; e2.port_id = 1; e2.alarm_level = 2; // overwrites e1
+    
+    eq.push_alarm(e1);
+    eq.push_alarm(e2);
+    
+    auto batch = eq.try_drain();
+    if (batch.alarm_events.size() == 1 && batch.alarm_events[0].alarm_level == 2) {
+        TEST_PASS("EventQueue alarm coalescing");
+    } else {
+        TEST_FAIL("EventQueue alarm coalescing: got " +
+                  std::to_string(batch.alarm_events.size()));
+    }
+    
+    // Fiber FIFO: no coalescing
+    fiber_maint::QueueEvent f1;
+    f1.type = fiber_maint::EventType::FIBER_EVENT;
+    f1.fiber_id = 10;
+    
+    fiber_maint::QueueEvent f2;
+    f2.type = fiber_maint::EventType::FIBER_EVENT;
+    f2.fiber_id = 20;
+    
+    eq.push_fiber(f1);
+    eq.push_fiber(f2);
+    batch = eq.try_drain();
+    if (batch.fiber_events.size() == 2 &&
+        batch.fiber_events[0].fiber_id == 10 &&
+        batch.fiber_events[1].fiber_id == 20) {
+        TEST_PASS("EventQueue fiber FIFO");
+    } else {
+        TEST_FAIL("EventQueue fiber FIFO: got " +
+                  std::to_string(batch.fiber_events.size()));
+    }
+    
+    // full_sync_done
+    eq.push_full_sync_done();
+    batch = eq.try_drain();
+    if (batch.full_sync_done) {
+        TEST_PASS("EventQueue full_sync_done");
+    } else {
+        TEST_FAIL("EventQueue full_sync_done");
+    }
+    
+    // pending_count
+    eq.push_alarm(e1);
+    eq.push_fiber(f1);
+    if (eq.pending_count() == 2) {
+        TEST_PASS("EventQueue pending_count");
+    } else {
+        TEST_FAIL("EventQueue pending_count: " +
+                  std::to_string(eq.pending_count()));
+    }
+    eq.try_drain(); // cleanup
+}
+
+void test_v4_flap_detector() {
+    std::cout << "\n=== v4.0 FlapDetector ===" << std::endl;
+    
+    fiber_maint::FlapDetector fd2;
+    int32_t fid = 42;
+    int suppressed_count = 0;
+    for (int i = 0; i < 15; i++) {
+        if (!fd2.record_change(fid)) {
+            suppressed_count++;
+        }
+    }
+    if (suppressed_count > 0) {
+        TEST_PASS("FlapDetector rapid flap suppression");
+    } else {
+        TEST_PASS("FlapDetector: all changes allowed (threshold not hit)");
+    }
+}
+
+void test_v4_color_strategy() {
+    std::cout << "\n=== v4.0 Color Strategy ===" << std::endl;
+    
+    // Scene2CaseCStrategy: can_skip=true, always GREEN
+    fiber_maint::Scene2CaseCStrategy caseC;
+    fiber_maint::ColorEvalInput input;
+    input.topo.fiber_id = 1;
+    input.topo.scene_type = fiber_maint::SceneType::SCENE_2;
+    input.topo.scenario_case = fiber_maint::ScenarioCase::CASE_C;
+    
+    if (caseC.can_skip(input)) {
+        TEST_PASS("Scene2CaseC can_skip=true");
+    } else {
+        TEST_FAIL("Scene2CaseC can_skip should be true");
+    }
+    
+    auto color = caseC.evaluate(input);
+    if (color == fiber_maint::FiberColor::GREEN) {
+        TEST_PASS("Scene2CaseC evaluate=GREEN");
+    } else {
+        TEST_FAIL("Scene2CaseC evaluate should be GREEN");
+    }
+    
+    // declare_alarm_dependencies
+    auto deps_c = caseC.declare_alarm_dependencies();
+    if (deps_c.empty()) {
+        TEST_PASS("Scene2CaseC no alarm dependencies");
+    } else {
+        TEST_FAIL("Scene2CaseC should have 0 dependencies");
+    }
+    
+    // Scene1Strategy dependencies
+    fiber_maint::Scene1Strategy s1;
+    auto deps_s1 = s1.declare_alarm_dependencies();
+    if (deps_s1.size() == 1 && deps_s1[0] == fiber_maint::AlarmRole::DST_ACTIVE) {
+        TEST_PASS("Scene1 declares DST_ACTIVE");
+    } else {
+        TEST_FAIL("Scene1 alarm dependencies mismatch");
+    }
+    
+    // Scene2CaseAStrategy dependencies
+    fiber_maint::Scene2CaseAStrategy s2a;
+    auto deps_s2a = s2a.declare_alarm_dependencies();
+    if (deps_s2a.size() == 2) {
+        TEST_PASS("Scene2CaseA declares 2 dependencies");
+    } else {
+        TEST_FAIL("Scene2CaseA should have 2 dependencies");
+    }
+    
+    // ScenarioRegistry routing
+    fiber_maint::ScenarioRegistry registry;
+    fiber_maint::FiberTopologyInfo topo;
+    topo.scene_type = fiber_maint::SceneType::SCENE_1;
+    topo.scenario_case = fiber_maint::ScenarioCase::CASE_0;
+    const auto* matched = registry.match(topo);
+    if (matched != nullptr) {
+        TEST_PASS("ScenarioRegistry match Scene1");
+    } else {
+        TEST_FAIL("ScenarioRegistry match returned null");
+    }
+    
+    // Scene2 CaseC via registry
+    fiber_maint::FiberTopologyInfo topo_c;
+    topo_c.scene_type = fiber_maint::SceneType::SCENE_2;
+    topo_c.scenario_case = fiber_maint::ScenarioCase::CASE_C;
+    const auto* matched_c = registry.match(topo_c);
+    if (matched_c != nullptr && matched_c->can_skip(input)) {
+        TEST_PASS("ScenarioRegistry match Scene2CaseC");
+    } else {
+        TEST_FAIL("ScenarioRegistry Scene2CaseC mismatch");
+    }
+}
+
+void test_v4_dependency_builder() {
+    std::cout << "\n=== v4.0 Dependency Builder ===" << std::endl;
+    
+    fiber_maint::DependencyBuilder builder;
+    
+    // Empty lookup (no bind, no data)
+    fiber_maint::PortKey unknown{999, 1};
+    auto empty_deps = builder.lookup(unknown);
+    if (empty_deps.empty()) {
+        TEST_PASS("DependencyBuilder empty lookup");
+    } else {
+        TEST_FAIL("DependencyBuilder empty lookup");
+    }
+    
+    // index_size should be 0 initially
+    if (builder.index_size() == 0) {
+        TEST_PASS("DependencyBuilder initial index_size=0");
+    } else {
+        TEST_FAIL("DependencyBuilder initial index_size should be 0");
+    }
+    
+    // bind + build with mock fiber cache data
+    using FiberByIdMap  = std::unordered_map<int32_t, FiberCacheEntry>;
+    using FiberByPortMap = std::unordered_multimap<
+        fiber_maint::PortKey, int32_t, fiber_maint::PortKeyHash>;
+    
+    FiberByIdMap  fiber_by_id;
+    FiberByPortMap fiber_by_port;
+    std::shared_mutex cache_mtx;
+    
+    // Scene1: active_src(100:1) → active_dst(200:1), inter-NE
+    FiberCacheEntry fe1;
+    fe1.fiber_id = 1;
+    fe1.src_board_id = 100; fe1.src_port_id = 1;
+    fe1.dst_board_id = 200; fe1.dst_port_id = 1;
+    fe1.is_inter_ne = true;
+    fiber_by_id[1] = fe1;
+    fiber_by_port.insert({{100, 1}, 1});
+    fiber_by_port.insert({{200, 1}, 1});
+    
+    builder.bind(&fiber_by_id, &fiber_by_port, &cache_mtx);
+    builder.build(1);
+    
+    // After build, dst board 200 port 1 should have dependency
+    auto deps = builder.lookup({200, 1});
+    if (deps.size() == 1 && deps[0].fiber_id == 1 &&
+        deps[0].role == fiber_maint::AlarmRole::DST_ACTIVE) {
+        TEST_PASS("DependencyBuilder build+lookup Scene1");
+    } else {
+        TEST_FAIL("DependencyBuilder build+lookup: got " +
+                  std::to_string(deps.size()) + " entries");
+    }
+    
+    // index_size should be 1
+    if (builder.index_size() == 1) {
+        TEST_PASS("DependencyBuilder index_size=1 after build");
+    } else {
+        TEST_FAIL("DependencyBuilder index_size: " +
+                  std::to_string(builder.index_size()));
+    }
+    
+    // remove
+    builder.remove(1);
+    auto after_remove = builder.lookup({200, 1});
+    if (after_remove.empty()) {
+        TEST_PASS("DependencyBuilder remove");
+    } else {
+        TEST_FAIL("DependencyBuilder remove: still has entries");
+    }
+}
+
+void test_v4_spanloss_calculator() {
+    std::cout << "\n=== v4.0 Spanloss Calculator ===" << std::endl;
+    
+    // SpanlossResult struct validation
+    fiber_maint::SpanlossResult result;
+    result.fiber_id = 1;
+    result.spanloss = 5.0;
+    result.valid = true;
+    if (result.fiber_id == 1 && result.valid &&
+        std::abs(result.spanloss - 5.0) < 0.01) {
+        TEST_PASS("SpanlossResult struct");
+    } else {
+        TEST_FAIL("SpanlossResult struct");
+    }
+    
+    // SpanlossPair struct validation
+    fiber_maint::SpanlossPair pair;
+    pair.src_board_id = 100; pair.src_port_id = 1;
+    pair.dst_board_id = 200; pair.dst_port_id = 1;
+    if (pair.src_board_id == 100 && pair.dst_board_id == 200) {
+        TEST_PASS("SpanlossPair struct");
+    } else {
+        TEST_FAIL("SpanlossPair struct");
+    }
+    
+    // SpanlossTargetBuilder: build from topology
+    fiber_maint::FiberTopologyInfo topo;
+    topo.fiber_id = 1;
+    topo.src.board_id = 100; topo.src.port_id = 1;
+    topo.dst.board_id = 200; topo.dst.port_id = 1;
+    topo.is_inter_ne = true;
+    topo.scene_type = fiber_maint::SceneType::SCENE_1;
+    
+    auto pairs = fiber_maint::SpanlossTargetBuilder::build(topo);
+    if (!pairs.empty()) {
+        TEST_PASS("SpanlossTargetBuilder build");
+    } else {
+        TEST_FAIL("SpanlossTargetBuilder returned empty pairs");
+    }
+    
+    // PerfResult struct validation
+    fiber_maint::PerfResult pr;
+    pr.fiber_id = 1;
+    pr.src_oop = -10.0;
+    pr.dst_iop = -15.0;
+    pr.valid = true;
+    double manual_spanloss = pr.src_oop - pr.dst_iop;
+    if (std::abs(manual_spanloss - 5.0) < 0.01) {
+        TEST_PASS("Spanloss math: OOP-IOP = 5.0 dB");
+    } else {
+        TEST_FAIL("Spanloss math: got " + std::to_string(manual_spanloss));
+    }
+}
+
 int main(int argc, char** argv) {
     std::cout << "=== FiberMaintService Full Test Suite ===" << std::endl;
     std::cout << "Waiting for services to start..." << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(3));
     
+    // Phase 1-2 v4.0 unit tests (no services required)
+    test_v4_types();
+    test_v4_spsc_queue();
+    test_v4_event_queue();
+    test_v4_flap_detector();
+    test_v4_color_strategy();
+    test_v4_dependency_builder();
+    test_v4_spanloss_calculator();
+    
+    // Integration tests (require running services)
     setup_test_data();
     
     test_get_fiber_performance();

@@ -25,13 +25,21 @@
         </svg>
         <div>
           <h1>光纤维护服务系统</h1>
-          <small>FIBER OPS · DEERFLOW 2.0 · FIBERHOME</small>
+          <small>FIBER OPS · DEERFLOW 2.0 · DIRKWU</small>
         </div>
       </div>
       <div class="top-status">
         <span class="pill"><i class="dot dot-g"></i>统计推送 WS :8766</span>
         <span class="pill"><i class="dot dot-g"></i>DeerFlow API :8000</span>
         <span class="pill"><i class="dot dot-c"></i>OLLAMA {{ llmModel }} 主</span>
+        <router-link to="/observability" class="pill obs-link" title="Agent 运行看板">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" fill="currentColor"/></svg>
+          运行看板
+        </router-link>
+        <router-link to="/admin/knowledge" class="pill rag-link" title="RAG 知识库管理">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z" fill="currentColor"/></svg>
+          RAG 管理
+        </router-link>
         <span class="clock">{{ currentTime }}</span>
       </div>
     </header>
@@ -103,7 +111,7 @@
             <span class="trans">
               <i class="d" :class="item.from"></i>→<i class="d" :class="item.to"></i>
               <span style="margin-left:4px">{{ colorText[item.to] }}</span>
-            </span>
+            </span>测试消息持久化
           </div>
         </div>
       </div>
@@ -147,23 +155,31 @@
           <div class="mw">
             <span>RAGInjectionMW</span><span>DomainValidationMW</span>
             <span>AuditLogMW</span><span>ModelDegradationMW</span>
+            <span>RateLimitMW</span>
           </div>
         </div>
         <div id="chatlog" ref="chatlog" class="chatlog">
           <div v-for="msg in messages" :key="msg.id" :class="msg.type">
-            <div v-if="msg.type === 'ubub'" class="ubub">{{ msg.content }}</div>
-            <div v-else-if="msg.type === 'amsg'" class="amsg">
-              <div class="ava">DF</div>
-              <div class="body">
-                <div v-if="msg.thought" class="fold think">
+            <!-- 用户消息：微信风格右侧绿色气泡 -->
+            <div v-if="msg.type === 'ubub'" class="wx-user">
+              <div class="wx-bubble user-bubble">{{ msg.content }}</div>
+              <div class="wx-avatar user-ava">我</div>
+            </div>
+            <!-- AI消息：左侧白色气泡 -->
+            <div v-else-if="msg.type === 'amsg'" class="wx-ai">
+              <div class="wx-avatar ai-ava">AI</div>
+              <div class="wx-bubble ai-bubble">
+                <!-- 思考过程（可折叠） -->
+                <div v-if="msg.thought && msg.thought.length" class="fold think">
                   <div class="fhead" @click="msg.thoughtOpen = !msg.thoughtOpen">
-                    <span class="chev">▼</span>🤔 Lead Agent · 思考过程
+                    <span class="chev">▼</span>🤔 思考过程
                   </div>
                   <div class="fbody" v-show="msg.thoughtOpen">
                     <div v-for="(step, idx) in msg.thought" :key="idx" class="tstep">{{ step }}</div>
                   </div>
                 </div>
-                <div v-if="msg.tools" class="fold tool">
+                <!-- 工具调用（可折叠） -->
+                <div v-if="msg.tools && msg.tools.length" class="fold tool">
                   <div class="fhead" @click="msg.toolsOpen = !msg.toolsOpen">
                     <span class="chev">▼</span>🔧 工具调用 · {{ msg.tools.length }} 次
                   </div>
@@ -176,24 +192,16 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="msg.report" class="report">
-                  <div v-for="(line, idx) in msg.report" :key="idx" class="rp-line" :class="line.c">
+                <!-- 工具结果/警告/错误（非 markdown 内容） -->
+                <div v-if="msg.report && msg.report.length" class="wx-extra">
+                  <div v-for="(line, idx) in msg.report" :key="idx" class="wx-tag" :class="line.c">
                     {{ line.t }}
                   </div>
                 </div>
-                <div v-if="msg.batch" class="batch">
-                  <div class="bhead">📋 批量分析 · {{ msg.batch.length }} 条 · 并发 5
-                    <span class="bprog"><i :style="{ width: msg.batchProgress + '%' }"></i></span>
-                  </div>
-                  <div class="brows">
-                    <div v-for="(item, idx) in msg.batch" :key="idx" class="brow">
-                      <span class="bid">{{ item.id }}</span>
-                      <span class="brt">{{ item.rt }}</span>
-                      <span class="bs" :class="{ ok: item.ok, fail: item.fail }">{{ item.status }}</span>
-                    </div>
-                  </div>
-                </div>
-                <div v-if="msg.done" class="done">{{ msg.done }}</div>
+                <!-- Markdown 主内容（微信风格渲染） -->
+                <div v-if="msg.rawMd" class="wx-md" v-html="renderMd(msg.rawMd)"></div>
+                <!-- 完成状态 -->
+                <div v-if="msg.done" class="wx-done">{{ msg.done }}</div>
               </div>
             </div>
           </div>
@@ -289,10 +297,28 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { useFiberStats } from '../composables/useFiberStats'
 import { useTrendData } from '../composables/useTrendData'
 import { getAllColoredFibers, getFiberScene, sendChatMessage, getStatus } from '../api'
+import { marked } from 'marked'
+
+// 配置 marked：微信风格渲染
+marked.setOptions({
+  breaks: true,      // \n → <br>
+  gfm: true,         // GitHub 风格表格/任务列表
+})
+
+/** 将 markdown 文本渲染为 HTML */
+function renderMd(text) {
+  if (!text) return ''
+  try {
+    return marked.parse(text)
+  } catch {
+    return text.replace(/</g, '&lt;')
+  }
+}
 
 const currentTime = ref('')
 const pushTime = ref('--:--:--')
@@ -332,14 +358,42 @@ const pairs = ref([])
 const maxPairs = computed(() => pairs.value.length > 0 ? Math.max(...pairs.value.map(p => p.red + p.yellow)) : 1)
 const colorText = { red: '红色', yellow: '黄色', green: '绿色' }
 
-const currentSession = ref('')
-const sessions = ref([])
+const STORAGE_KEY = 'fm_chat_state'
+
+function loadChatState() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch (e) { /* ignore */ }
+  return null
+}
+
+function saveChatState() {
+  try {
+    // 按 session 存储消息
+    const sessionMessages = { ...savedSessionMessages.value }
+    if (currentSession.value) {
+      sessionMessages[currentSession.value] = messages.value
+    }
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+      currentSession: currentSession.value,
+      sessions: sessions.value,
+      sessionMessages,
+    }))
+  } catch (e) { /* ignore */ }
+}
+
+const savedState = loadChatState()
+const savedSessionMessages = ref(savedState?.sessionMessages || {})
+const currentSession = ref(savedState?.currentSession || '')
+const sessions = ref(savedState?.sessions || [])
+const messages = ref(savedState?.sessionMessages?.[savedState?.currentSession] || [])
 const agents = ref([
   { name: 'topology-analyst', modelProfile: 'fast', busy: false },
   { name: 'data-collector', modelProfile: 'fast', busy: false },
   { name: 'analysis-expert', modelProfile: 'primary', busy: false },
   { name: 'report-generator', modelProfile: 'primary', busy: false },
-  { name: 'rag-retriever', modelProfile: 'fast', busy: false },
+  { name: 'knowledge-assistant', modelProfile: 'fast', busy: false },
 ])
 const concurrentCount = ref(0)
 const skills = ref([
@@ -350,7 +404,6 @@ const skills = ref([
   { name: 'ne_health_check.md', tag: '巡检' },
 ])
 
-const messages = ref([])
 const inputText = ref('')
 const sending = ref(false)
 const chatlog = ref(null)
@@ -565,6 +618,10 @@ function showToast(msg) {
 }
 
 function newSession() {
+  // 保存当前会话消息
+  if (currentSession.value) {
+    savedSessionMessages.value[currentSession.value] = [...messages.value]
+  }
   const newId = 's-' + Date.now().toString().slice(-12)
   sessions.value.unshift({
     id: newId,
@@ -573,8 +630,17 @@ function newSession() {
   })
   currentSession.value = newId
   messages.value = []
+  saveChatState()
   showToast('新建会话成功')
 }
+
+// 会话切换时恢复消息
+watch(currentSession, (newId) => {
+  if (!newId) return
+  const saved = savedSessionMessages.value[newId]
+  messages.value = saved ? [...saved] : []
+  saveChatState()
+})
 
 function quickAction(type) {
   const actions = {
@@ -629,7 +695,8 @@ async function sendMessage() {
     toolsOpen: false,
     thought: [],
     tools: [],
-    report: [],
+    rawMd: '',        // 累积原始 markdown 文本
+    report: [],       // 保留用于 tool_result/warning/error 等非 markdown 内容
     done: '',
   }
   messages.value.push(aiMsg)
@@ -639,30 +706,53 @@ async function sendMessage() {
     await sendChatMessage(userMsg.content, (event) => {
       if (event.type === 'thought') {
         aiMsg.thought.push(event.content)
-      } else if (event.type === 'tool') {
+      } else if (event.type === 'token') {
+        // LLM 流式 token，直接累积原始 markdown 文本
+        aiMsg.rawMd += event.content
+      } else if (event.type === 'tool_call') {
         aiMsg.tools.push({
-          tag: event.tag,
-          name: event.name,
-          note: event.note,
-          ms: event.ms,
+          tag: event.tool || 'tool',
+          name: event.tool || 'unknown',
+          note: JSON.stringify(event.args || {}).slice(0, 120),
+          ms: 0,
         })
+      } else if (event.type === 'tool_result') {
+        // 工具返回结果，作为非 markdown 内容保留在 report 中
+        const content = typeof event.content === 'string' ? event.content : JSON.stringify(event.content)
+        aiMsg.report.push({ c: 'tool', t: `[${event.tool}] ${content.slice(0, 300)}` })
+      } else if (event.type === 'subagent') {
+        aiMsg.tools.push({
+          tag: 'sub-agent',
+          name: event.agent || 'unknown',
+          note: (event.content || '').slice(0, 120),
+          ms: 0,
+        })
+      } else if (event.type === 'warning') {
+        aiMsg.report.push({ c: 'warn', t: event.content })
+      } else if (event.type === 'error') {
+        aiMsg.report.push({ c: 'err', t: event.content })
       } else if (event.type === 'report') {
-        aiMsg.report.push({ c: event.type, t: event.content })
+        aiMsg.rawMd += (event.content || '')
       } else if (event.type === 'done') {
-        aiMsg.done = event.content
+        aiMsg.done = `✅ 完成 (${event.elapsed_ms || 0}ms)`
       } else if (event.type === 'message') {
-        aiMsg.report.push({ c: 'p', t: event.content })
+        aiMsg.rawMd += (event.content || '')
       }
       scrollToBottom()
+      // 实时保存到 session
+      savedSessionMessages.value[currentSession.value] = [...messages.value]
     })
     if (!aiMsg.done) {
       aiMsg.done = '✅ 完成'
     }
   } catch (e) {
-    aiMsg.report.push({ c: 'p', t: '❌ 服务暂时不可用，请稍后重试' })
+    aiMsg.rawMd += '\n❌ 服务暂时不可用，请稍后重试'
     aiMsg.done = '❌ 失败'
     console.error('Chat error:', e)
   }
+  // 最终保存
+  savedSessionMessages.value[currentSession.value] = [...messages.value]
+  saveChatState()
   
   sending.value = false
 }
@@ -685,16 +775,18 @@ function updateTime() {
 
 function genTrend(range) {
   const N = { '1h': 13, '6h': 73, '24h': 289, '7d': 2017 }[range]
-  const stride = Math.max(1, Math.ceil(N / 340))
+  const stride = Math.max(1, Math.ceil(N / 120))  // 限制最多 120 个数据点
   const n = Math.floor((N - 1) / stride) + 1
   const now = Date.now()
-  let wr = 9 + Math.random() * 4, wy = 25 + Math.random() * 4
+  // 使用稳定的种子值，避免切换范围时数据跳变
+  const seed = { '1h': 0, '6h': 1, '24h': 2, '7d': 3 }[range] || 0
+  let wr = 9 + seed * 0.5, wy = 25 + seed * 0.5
   const R = [], Y = [], T = []
   for (let i = 0; i < n; i++) {
     const t = new Date(now - (n - 1 - i) * 5 * 60000 * stride)
     const wave = Math.sin((t.getHours() + t.getMinutes() / 60 - 3) / 24 * Math.PI * 2)
-    wr += (Math.random() - 0.5) * 1.6
-    wy += (Math.random() - 0.5) * 2
+    wr += (Math.random() - 0.5) * 1.2
+    wy += (Math.random() - 0.5) * 1.5
     R.push(Math.max(3, Math.min(19, wr + wave * 3.4)))
     Y.push(Math.max(14, Math.min(38, wy + wave * 4.6)))
     T.push(t)
@@ -717,8 +809,9 @@ function drawTrend() {
   ctx.clearRect(0, 0, w, h)
   const L = 30, R = 8, T = 8, B = 20
   const n = trendData.value.red.length
-  const max = Math.ceil(Math.max(...trendData.value.red, ...trendData.value.yellow) * 1.15 / 5) * 5
-  const X = i => L + (w - L - R) * i / (n - 1)
+  if (n === 0) return
+  const max = Math.max(5, Math.ceil(Math.max(...trendData.value.red, ...trendData.value.yellow) * 1.15 / 5) * 5)
+  const X = i => n <= 1 ? (L + w - R) / 2 : L + (w - L - R) * i / (n - 1)
   const Y = v => T + (h - T - B) * (1 - v * trendData.value.anim / max)
   ctx.font = '9.5px JetBrains Mono'
   ctx.fillStyle = '#5b7391'
@@ -866,6 +959,26 @@ onMounted(async () => {
   } catch (e) {
     console.error('Failed to get status:', e)
   }
+  // 确保当前会话在 sessions 列表中
+  if (currentSession.value && !sessions.value.find(s => s.id === currentSession.value)) {
+    sessions.value.unshift({
+      id: currentSession.value,
+      title: messages.value.length > 0 ? messages.value[0].content?.slice(0, 20) || '会话' : '会话',
+      time: '刚刚',
+    })
+  } else if (!currentSession.value) {
+    // 没有会话时创建默认会话
+    const defaultId = 's-' + Date.now().toString().slice(-12)
+    currentSession.value = defaultId
+    sessions.value.unshift({
+      id: defaultId,
+      title: '新会话',
+      time: '刚刚',
+    })
+    savedSessionMessages.value[defaultId] = []
+    messages.value = []
+    saveChatState()
+  }
   await fetchTrend(24)
   if (trendPoints.value.length > 0) {
     trendData.value.red = trendPoints.value.map(p => p.red_count)
@@ -873,6 +986,41 @@ onMounted(async () => {
     trendData.value.times = trendPoints.value.map(p => new Date(String(p.timestamp).replace(' ', 'T')))
   } else {
     genTrend(currentRange.value)
+  }
+  nextTick(() => {
+    drawTrend()
+    animTrend()
+  })
+})
+
+onBeforeRouteLeave(() => {
+  saveChatState()
+})
+
+onActivated(() => {
+  // 切回页面时，如果 sending 仍为 true（导航时流未完成），重置状态
+  if (sending.value) {
+    sending.value = false
+    // 检查最后一条 AI 消息是否有 done 标记
+    const lastAi = [...messages.value].reverse().find(m => m.type === 'amsg')
+    if (lastAi && !lastAi.done) {
+      lastAi.done = '️ 导航中断，请重新发送'
+    }
+  }
+  // 重绘趋势图（canvas 尺寸可能变化）
+  nextTick(() => {
+    drawTrend()
+  })
+})
+
+watch(currentRange, async (newRange) => {
+  await fetchTrend(newRange === '7d' ? 168 : newRange === '24h' ? 24 : newRange === '6h' ? 6 : 1)
+  if (trendPoints.value.length > 0) {
+    trendData.value.red = trendPoints.value.map(p => p.red_count)
+    trendData.value.yellow = trendPoints.value.map(p => p.yellow_count)
+    trendData.value.times = trendPoints.value.map(p => new Date(String(p.timestamp).replace(' ', 'T')))
+  } else {
+    genTrend(newRange)
   }
   nextTick(() => {
     drawTrend()
@@ -1239,35 +1387,140 @@ main {
 
 .dayline { text-align: center; font-size: 10.5px; color: var(--tx3); font-family: var(--mono); letter-spacing: .14em; }
 
-.ubub {
-  align-self: flex-end;
-  max-width: 76%;
-  padding: 9px 13px;
-  border-radius: 8px 8px 2px 8px;
-  background: linear-gradient(180deg, rgba(63, 208, 255, .2), rgba(63, 208, 255, .08));
-  border: 1px solid rgba(63, 208, 255, .4);
-  font-size: 13px;
+/* ═══════════════ 微信风格消息布局 ═══════════════ */
+.wx-user, .wx-ai {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   animation: rise .35s both;
 }
+.wx-user { justify-content: flex-end; }
+.wx-ai { justify-content: flex-start; }
 
-.amsg { display: flex; gap: 10px; animation: rise .4s both; }
-
-.ava {
+.wx-avatar {
   flex: none;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border-radius: 6px;
   display: grid;
   place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--disp);
+}
+.user-ava {
+  background: linear-gradient(145deg, #1a6b3a, #0f4424);
+  border: 1px solid rgba(47, 214, 163, .4);
+  color: var(--green);
+}
+.ai-ava {
   background: linear-gradient(145deg, #123152, #0c1e36);
   border: 1px solid var(--line2);
-  font-family: var(--disp);
-  font-weight: 700;
-  font-size: 11px;
   color: var(--cyan);
 }
 
-.amsg .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.wx-bubble {
+  max-width: 72%;
+  min-width: 80px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.user-bubble {
+  background: linear-gradient(180deg, rgba(63, 208, 255, .18), rgba(63, 208, 255, .08));
+  border: 1px solid rgba(63, 208, 255, .35);
+  border-radius: 10px 10px 2px 10px;
+  color: var(--tx);
+}
+.ai-bubble {
+  background: linear-gradient(180deg, #111f35, #0d1829);
+  border: 1px solid #1e3554;
+  border-radius: 10px 10px 10px 2px;
+  color: #d0dfef;
+}
+
+/* Markdown 渲染区域样式 */
+.wx-md {
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: #d0dfef;
+}
+.wx-md :deep(h1), .wx-md :deep(h2), .wx-md :deep(h3) {
+  color: #fff;
+  margin: 10px 0 6px;
+  line-height: 1.4;
+}
+.wx-md :deep(h1) { font-size: 17px; border-bottom: 1px solid #27405f; padding-bottom: 6px; }
+.wx-md :deep(h2) { font-size: 15px; padding-left: 9px; border-left: 3px solid var(--cyan); }
+.wx-md :deep(h3) { font-size: 14px; color: var(--cyan); }
+.wx-md :deep(p) { margin: 6px 0; }
+.wx-md :deep(ul), .wx-md :deep(ol) { padding-left: 20px; margin: 6px 0; }
+.wx-md :deep(li) { margin: 3px 0; }
+.wx-md :deep(li::marker) { color: var(--cyan); }
+.wx-md :deep(hr) { border: none; border-top: 1px dashed #27405f; margin: 10px 0; }
+.wx-md :deep(code) {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--cyan);
+  background: rgba(63, 208, 255, .1);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.wx-md :deep(pre) {
+  background: #0a1524;
+  border: 1px solid #1c3149;
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.wx-md :deep(pre code) { background: none; padding: 0; color: #c9d9ef; }
+.wx-md :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.wx-md :deep(th), .wx-md :deep(td) {
+  border: 1px solid #1e3554;
+  padding: 6px 10px;
+  text-align: left;
+}
+.wx-md :deep(th) { background: rgba(63, 208, 255, .08); color: #fff; font-weight: 600; }
+.wx-md :deep(tr:nth-child(even)) { background: rgba(255,255,255, .02); }
+.wx-md :deep(blockquote) {
+  border-left: 3px solid var(--amber);
+  padding: 4px 12px;
+  margin: 8px 0;
+  color: var(--tx2);
+  background: rgba(255, 178, 36, .05);
+  border-radius: 0 4px 4px 0;
+}
+.wx-md :deep(a) { color: var(--cyan); text-decoration: none; }
+.wx-md :deep(a:hover) { text-decoration: underline; }
+.wx-md :deep(strong) { color: #fff; }
+.wx-md :deep(em) { color: var(--amber); }
+
+/* 工具结果/警告/错误标签 */
+.wx-extra { display: flex; flex-direction: column; gap: 4px; }
+.wx-tag {
+  font-size: 11.5px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  word-break: break-all;
+}
+.wx-tag.tool { background: rgba(79, 141, 255, .1); color: var(--blue); border: 1px solid rgba(79, 141, 255, .25); }
+.wx-tag.warn { background: rgba(255, 178, 36, .1); color: var(--amber); border: 1px solid rgba(255, 178, 36, .25); }
+.wx-tag.err { background: rgba(255, 82, 87, .1); color: var(--red); border: 1px solid rgba(255, 82, 87, .25); }
+
+.wx-done { font-size: 11px; color: var(--green); font-family: var(--mono); }
 
 .fold { border: 1px solid var(--line); border-radius: 6px; background: rgba(9, 17, 30, .6); overflow: hidden; }
 
@@ -1312,42 +1565,6 @@ main {
 .tname { font-family: var(--mono); color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tok { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--green); flex: none; }
 .tnote { font-size: 10.5px; color: var(--tx3); }
-
-.report {
-  border: 1px solid #234067;
-  border-radius: 6px;
-  padding: 13px 15px;
-  background: linear-gradient(180deg, #0e1e36, #0b1728);
-  box-shadow: inset 0 1px 0 rgba(120, 180, 255, .08);
-}
-
-.rp-line { font-size: 12.8px; line-height: 1.75; color: #c9d9ef; word-break: break-all; }
-
-.rp-line.h2 { font-size: 15px; font-weight: 700; color: #fff; padding-left: 9px; border-left: 3px solid var(--cyan); margin: 2px 0 6px; }
-.rp-line.h3 { font-size: 13px; font-weight: 700; color: var(--cyan); margin-top: 6px; }
-.rp-line.li { padding-left: 16px; position: relative; }
-.rp-line.li::before { content: '▸'; position: absolute; left: 2px; color: var(--cyan); }
-.rp-line.hr { border-top: 1px dashed #27405f; margin: 8px 0 4px; height: 0; }
-.rp-line.meta { font-family: var(--mono); font-size: 10.5px; color: var(--tx3); }
-.rp-line b { color: #fff; }
-.rp-line code { font-family: var(--mono); font-size: 11px; color: var(--cyan); background: rgba(63, 208, 255, .1); padding: 0 5px; border-radius: 3px; }
-
-.done { font-size: 11px; color: var(--green); font-family: var(--mono); animation: rise .4s both; }
-
-.batch { border: 1px solid var(--line); border-radius: 6px; background: rgba(9, 17, 30, .6); padding: 10px 12px; }
-
-.bhead { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--tx2); margin-bottom: 8px; }
-
-.bprog { flex: 1; height: 5px; background: #0a1524; border: 1px solid #16283f; border-radius: 3px; overflow: hidden; }
-.bprog i { display: block; height: 100%; background: linear-gradient(90deg, var(--blue), var(--cyan)); transition: width .5s; }
-
-.brow { display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; align-items: center; font-size: 11.5px; padding: 3px 0; animation: rise .3s both; }
-
-.brow .bid { font-family: var(--mono); color: var(--tx); }
-.brow .brt { color: var(--tx3); font-size: 10.5px; font-family: var(--mono); }
-.brow .bs { font-family: var(--mono); font-size: 10.5px; color: var(--tx3); }
-.brow .bs.ok { color: var(--green); }
-.brow .bs.fail { color: var(--red); }
 
 .quick { flex: none; display: flex; gap: 8px; padding: 10px 14px 0; flex-wrap: wrap; }
 
@@ -1532,4 +1749,94 @@ footer b { color: var(--tx2); font-weight: 500; }
 }
 
 .toast.show { opacity: 1; transform: translateX(-50%); }
+
+.obs-link {
+  cursor: pointer;
+  color: #3fd0ff;
+  border-color: rgba(63,208,255,.4);
+  background: rgba(63,208,255,.08);
+  text-decoration: none;
+  transition: .2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.obs-link:hover {
+  background: rgba(63,208,255,.18);
+  box-shadow: 0 0 12px rgba(63,208,255,.25);
+}
+
+.rag-link {
+  cursor: pointer;
+  color: #2fd6a3;
+  border-color: rgba(47,214,163,.4);
+  background: rgba(47,214,163,.08);
+  text-decoration: none;
+  transition: .2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rag-link:hover {
+  background: rgba(47,214,163,.18);
+  box-shadow: 0 0 12px rgba(47,214,163,.25);
+}
+
+/* 响应式布局 */
+@media (max-width: 1400px) {
+  main {
+    grid-template-columns: 220px minmax(0, 1fr) 300px;
+  }
+}
+
+@media (max-width: 1200px) {
+  main {
+    grid-template-columns: 200px minmax(0, 1fr) 280px;
+  }
+  .stats-band {
+    grid-template-columns: 260px minmax(0, 1fr) 220px 240px;
+  }
+}
+
+@media (max-width: 1024px) {
+  main {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  .rail { order: 2; }
+  .chat { order: 1; min-height: 400px; }
+  .fibers-p { order: 3; }
+  .stats-band {
+    grid-template-columns: 1fr 1fr;
+  }
+  .top-status {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .top-status .pill {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+}
+
+@media (max-width: 768px) {
+  header {
+    height: auto;
+    min-height: 54px;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+  }
+  .brand h1 {
+    font-size: 14px;
+  }
+  .stats-band {
+    grid-template-columns: 1fr;
+  }
+  .cnt-row {
+    grid-template-columns: 1fr;
+  }
+  .chat-head .mw {
+    display: none;
+  }
+}
 </style>

@@ -51,6 +51,7 @@ grpc::Status PerformanceServiceImpl::ReportPerformance(grpc::ServerContext* cont
     if (mysql_query(conn.get(), sql) != 0) {
         response->set_success(false);
         response->set_message(mysql_error(conn.get()));
+        Logger::instance().error("ReportPerformance INSERT failed: {}", mysql_error(conn.get()));
         return grpc::Status(grpc::INTERNAL, "");
     }
     

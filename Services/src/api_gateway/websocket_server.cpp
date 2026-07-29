@@ -15,7 +15,7 @@ bool WebSocketServer::init(int port) {
     
     std::string alarm_addr = Config::instance().get_string("alarm_service.addr", "localhost:50054");
     std::string board_addr = Config::instance().get_string("board_service.addr", "localhost:50051");
-    std::string topology_addr = Config::instance().get_string("topology_service.addr", "localhost:50052");
+    std::string topology_addr = Config::instance().get_string("topology_service.addr", "localhost:50062");
     
     alarm_stub_ = fiber::alarm::AlarmService::NewStub(grpc::CreateChannel(alarm_addr, grpc::InsecureChannelCredentials()));
     board_stub_ = fiber::board::BoardService::NewStub(grpc::CreateChannel(board_addr, grpc::InsecureChannelCredentials()));

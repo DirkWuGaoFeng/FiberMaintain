@@ -75,7 +75,7 @@ void test_board_service() {
 void test_topology_service() {
     std::cout << "\n=== TopologyService Tests ===" << std::endl;
     
-    auto channel = grpc::CreateChannel("localhost:50052", grpc::InsecureChannelCredentials());
+    auto channel = grpc::CreateChannel("localhost:50062", grpc::InsecureChannelCredentials());
     auto stub = fiber::topology::TopologyService::NewStub(channel);
     
     fiber::topology::CreateFiberRequest create_req;
@@ -257,7 +257,7 @@ void test_fiber_maint_service() {
 void test_health_checks() {
     std::cout << "\n=== Health Check Tests ===" << std::endl;
     
-    std::vector<std::string> services = {"localhost:50051", "localhost:50052", "localhost:50053", "localhost:50054", "localhost:50055"};
+    std::vector<std::string> services = {"localhost:50051", "localhost:50062", "localhost:50053", "localhost:50054", "localhost:50055"};
     std::vector<std::string> service_names = {"BoardService", "TopologyService", "PerformanceService", "AlarmService", "FiberMaintService"};
     
     for (size_t i = 0; i < services.size(); ++i) {
