@@ -1,5 +1,8 @@
 """
-Result aggregator node: generates the final natural language response.
+Result Aggregator Node — Final output assembly.
+
+Collects results from all paths (fast path, normal, report, knowledge, batch)
+and produces the final response to the user.
 """
 
 from __future__ import annotations
@@ -7,105 +10,88 @@ from __future__ import annotations
 import logging
 
 from langchain_core.messages import AIMessage
-from langchain_core.prompts import ChatPromptTemplate
 
-from ..graph.state import FiberAgentState
-from ..llm.provider import get_llm_with_fallback
-from ..llm.prompts import RESULT_AGGREGATOR_PROMPT
+from ..graph.state import MainGraphState
 
 logger = logging.getLogger(__name__)
 
 
-async def result_aggregator_node(state: FiberAgentState) -> dict:
+async def result_aggregator_node(state: MainGraphState) -> dict:
     """
-    Result aggregator: synthesizes analysis results into a user-facing response.
-    If degradation_level is L3/L4, uses template-based response instead of LLM.
+    Result aggregator: assemble final output from various paths.
+
+    Priority:
+    1. fast_path_result (already complete)
+    2. final_output (set by narrator/template/knowledge)
+    3. report_content (from report generator)
+    4. Last AI message in messages
+    5. Fallback message
     """
-    # Check for degradation modes
-    level = state.get("degradation_level", "L1")
-    if level in ("L3", "L4"):
-        # Skip LLM, use template
-        report = state.get("final_report", "")
-        if not report:
-            report = _generate_template_response(state)
+    # Already have a final output from upstream nodes
+    # Always pass through final_output so on_chain_end event carries it for frontend
+    if state.get("final_output"):
+        return {"final_output": state["final_output"]}
+
+    # Check fast path result
+    if state.get("fast_path_result"):
+        return {"final_output": state["fast_path_result"]}
+
+    # Check report content
+    if state.get("report_content"):
         return {
-            "messages": [AIMessage(content=report)],
-            "final_report": report,
+            "messages": [AIMessage(content=state["report_content"])],
+            "final_output": state["report_content"],
         }
 
-    # Normal LLM-based aggregation
-    intent = state.get("intent")
-    fiber_data = state.get("fiber_data", {})
-    analysis = state.get("analysis_result", {})
-    diagnosis = state.get("diagnosis", "")
-
-    # For chitchat, pass through directly
-    if intent and intent.intent == "chitchat":
-        last_msg = state["messages"][-1] if state["messages"] else None
-        if last_msg and isinstance(last_msg, AIMessage):
-            return {"final_report": last_msg.content}
-
-    try:
-        llm = get_llm_with_fallback(temperature=0.3)
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", RESULT_AGGREGATOR_PROMPT),
-            ("human", """
-## User Query
-{user_query}
-
-## Analysis Result
-{analysis}
-
-## Fiber Data Summary
-{fiber_data}
-
-## Diagnosis
-{diagnosis}
-
-Please provide a clear, actionable response.
-"""),
-        ])
-
-        chain = prompt | llm
-        result = await chain.ainvoke({
-            "user_query": state["messages"][-1].content if state["messages"] else "",
-            "analysis": str(analysis) if analysis else "No analysis available",
-            "fiber_data": str(fiber_data)[:2000] if fiber_data else "No data",
-            "diagnosis": diagnosis or "No diagnosis",
-        })
-
-        report = result.content if hasattr(result, "content") else str(result)
+    # Check batch results
+    batch_results = state.get("batch_results", [])
+    if batch_results:
+        summary = _summarize_batch(batch_results)
         return {
-            "messages": [AIMessage(content=report)],
-            "final_report": report,
+            "messages": [AIMessage(content=summary)],
+            "final_output": summary,
         }
 
-    except Exception as e:
-        logger.error(f"[ResultAggregator] LLM failed: {e}")
-        report = _generate_template_response(state)
+    # Check RAG context (knowledge QA)
+    rag_context = state.get("rag_context", [])
+    if rag_context:
+        answer = "\n".join(rag_context[:3])
         return {
-            "messages": [AIMessage(content=report)],
-            "final_report": report,
+            "messages": [AIMessage(content=answer)],
+            "final_output": answer,
         }
 
+    # Fallback: use last AI message
+    messages = state.get("messages", [])
+    for msg in reversed(messages):
+        if hasattr(msg, "content") and msg.type == "ai" and msg.content:
+            return {"final_output": msg.content}
 
-def _generate_template_response(state: FiberAgentState) -> str:
-    """Generate a template-based response for degradation modes."""
-    intent = state.get("intent")
-    fiber_data = state.get("fiber_data", {})
+    # Ultimate fallback
+    fallback = "抱歉，我暂时无法处理您的请求。请稍后重试。"
+    return {
+        "messages": [AIMessage(content=fallback)],
+        "final_output": fallback,
+    }
 
-    if not fiber_data:
-        return "I've processed your request. The system is currently in a limited mode. Please try again later."
 
-    total = fiber_data.get("total", 0)
-    normal = fiber_data.get("normal", 0)
-    abnormal = fiber_data.get("abnormal", 0)
+def _summarize_batch(results: list[dict]) -> str:
+    """Summarize batch query results."""
+    total = len(results)
+    errors = sum(1 for r in results if r.get("error"))
+    success = total - errors
 
-    return f"""## Query Results
+    lines = [f"📊 批量查询完成：共 {total} 条，成功 {success} 条"]
+    if errors:
+        lines.append(f"  失败 {errors} 条")
 
-- **Total fibers processed**: {total}
-- **Normal**: {normal}
-- **Abnormal**: {abnormal}
+    # Color distribution if available
+    colors = {}
+    for r in results:
+        color = r.get("color", "UNKNOWN")
+        colors[color] = colors.get(color, 0) + 1
+    if colors:
+        color_str = "、".join(f"{k}: {v}" for k, v in colors.items())
+        lines.append(f"  颜色分布：{color_str}")
 
-> Note: System is operating in degraded mode. Some analysis capabilities may be limited.
-"""
+    return "\n".join(lines)

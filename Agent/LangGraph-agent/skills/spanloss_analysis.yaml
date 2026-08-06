@@ -1,0 +1,59 @@
+# Skill: 衰耗分析 (Normal Path) | 覆盖: R052, R104
+id: spanloss_analysis
+name: 光纤衰耗分析
+version: "1.0"
+description: "深度分析光纤衰耗异常原因（多步采集+推理）"
+
+triggers:
+  - pattern: "(?:分析|诊断|排查)\\s*(?:光纤|FIB)[-_]?\\s*(\\d+)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+  - pattern: "(?:光纤|FIB)[-_]?\\s*(\\d+)\\s*(?:中断|断开|故障)\\s*(?:的)?\\s*(?:原因|分析)?"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+
+routing:
+  intent: spanloss_analysis
+  group: data_query
+  fast_path_eligible: false
+  template_id: ""
+
+tools: []
+
+judgment:
+  metric: spanloss
+  extract_pattern: "spanloss[=:]\\s*([\\d.]+)"
+  conditions:
+    - op: ">"
+      value: "${SPANLOSS_CRITICAL}"
+      status: CRITICAL
+      finding: "衰耗 {value}dB 严重超标（超出 {percent}%）"
+    - op: ">"
+      value: "${SPANLOSS_THRESHOLD}"
+      status: WARNING
+      finding: "衰耗 {value}dB 超过阈值"
+  default:
+    status: NORMAL
+    finding: "衰耗 {value}dB 正常"
+  actions:
+    CRITICAL: ["立即派单检修", "检查关联光纤", "通知值班主管"]
+    WARNING: ["列入巡检计划", "持续监控趋势"]
+
+collector_tools:
+  - fiber_spanloss_query
+  - fiber_performance_query
+  - alarm_query
+  - fiber_trend_query
+  - fiber_history_performance
+
+test_cases:
+  - input: "分析光纤 3"
+    expected_intent: spanloss_analysis
+    expected_params: { fiber_id: 3 }
+    expected_fast_path: false
+  - input: "光纤5中断的原因"
+    expected_intent: spanloss_analysis
+    expected_params: { fiber_id: 5 }
+    expected_fast_path: false

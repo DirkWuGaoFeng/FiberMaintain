@@ -210,6 +210,10 @@ class FiberHttpClient:
         """POST request with circuit breaker + retry + backpressure."""
         return await self._request("POST", path, timeout=timeout, json=json)
 
+    async def delete(self, path: str, timeout: float = 3.0, params: Optional[dict] = None) -> str:
+        """DELETE request with circuit breaker + retry + backpressure."""
+        return await self._request("DELETE", path, timeout=timeout, params=params)
+
     # -- Internal --
 
     async def _request(
@@ -221,6 +225,10 @@ class FiberHttpClient:
         json: Optional[dict] = None,
     ) -> str:
         """Execute request with full resilience pipeline."""
+        # Get trace_id for logging
+        from ..observability.request_tracer import get_current_trace_id
+        trace_id = get_current_trace_id()
+
         # 1. Circuit breaker check
         await self.circuit_breaker.check()
 
@@ -229,26 +237,47 @@ class FiberHttpClient:
 
         client = await self._ensure_client()
         last_error: Optional[Exception] = None
+        request_start = time.time()
+
+        logger.info(
+            f"[HTTP-TRACE:{trace_id}] {method} {path} timeout={timeout}s "
+            f"params={params}" if params else f"[HTTP-TRACE:{trace_id}] {method} {path} timeout={timeout}s"
+        )
 
         try:
             for attempt in range(self.max_retries):
+                attempt_start = time.time()
                 try:
+                    # 注入 X-Trace-Id 头，实现跨服务跟踪透传
+                    headers = {"X-Trace-Id": trace_id} if trace_id else {}
                     resp = await client.request(
                         method,
                         path,
                         timeout=httpx.Timeout(timeout),
                         params=params,
                         json=json,
+                        headers=headers,
                     )
+
+                    elapsed_ms = round((time.time() - attempt_start) * 1000, 2)
+                    body_preview = resp.text[:100] + "..." if len(resp.text) > 100 else resp.text
 
                     # 4xx: do not retry (client error)
                     if 400 <= resp.status_code < 500:
+                        logger.info(
+                            f"[HTTP-TRACE:{trace_id}] {method} {path} "
+                            f"status={resp.status_code} elapsed={elapsed_ms}ms (client error, no retry)"
+                        )
                         await self.backpressure.record(True)
                         await self.circuit_breaker.record_success()
                         return resp.text
 
                     # 5xx: retry with backoff
                     if resp.status_code >= 500:
+                        logger.warning(
+                            f"[HTTP-TRACE:{trace_id}] {method} {path} "
+                            f"status={resp.status_code} elapsed={elapsed_ms}ms (server error)"
+                        )
                         raise httpx.HTTPStatusError(
                             f"Server error {resp.status_code}",
                             request=resp.request,
@@ -256,29 +285,37 @@ class FiberHttpClient:
                         )
 
                     # 2xx/3xx: success
+                    logger.info(
+                        f"[HTTP-TRACE:{trace_id}] {method} {path} "
+                        f"status={resp.status_code} elapsed={elapsed_ms}ms body={body_preview}"
+                    )
                     await self.backpressure.record(True)
                     await self.circuit_breaker.record_success()
                     return resp.text
 
                 except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.ConnectError) as e:
                     last_error = e
+                    elapsed_ms = round((time.time() - attempt_start) * 1000, 2)
                     await self.backpressure.record(False)
                     await self.circuit_breaker.record_failure()
 
                     if attempt < self.max_retries - 1:
                         backoff = 0.5 * (attempt + 1)
                         logger.warning(
-                            f"[HTTPClient] {method} {path} attempt={attempt+1} failed: {e}, "
-                            f"retrying in {backoff}s"
+                            f"[HTTP-TRACE:{trace_id}] {method} {path} "
+                            f"attempt={attempt+1}/{self.max_retries} failed={type(e).__name__} "
+                            f"elapsed={elapsed_ms}ms retry_in={backoff}s"
                         )
                         await asyncio.sleep(backoff)
                     else:
                         logger.error(
-                            f"[HTTPClient] {method} {path} all {self.max_retries} attempts failed"
+                            f"[HTTP-TRACE:{trace_id}] {method} {path} "
+                            f"all {self.max_retries} attempts failed, last_error={e}"
                         )
 
+            total_ms = round((time.time() - request_start) * 1000, 2)
             raise BackendUnavailableError(
-                f"Backend unavailable after {self.max_retries} retries: {last_error}"
+                f"Backend unavailable after {self.max_retries} retries ({total_ms}ms): {last_error}"
             )
         finally:
             self.backpressure.release()
@@ -289,9 +326,38 @@ class FiberHttpClient:
         """Check if the backend is reachable."""
         try:
             result = await self.get("/health", timeout=2.0)
-            return '"ok"' in result
+            return '"ok"' in result or '"status"' in result
         except Exception:
             return False
+
+
+# =============================================================================
+# Structured Error Helper [v7.1 Layer 3]
+# =============================================================================
+
+def make_error_json(error_code: str, message: str, hint: str = "") -> str:
+    """Build structured error JSON for Tool responses."""
+    import json as _json
+    return _json.dumps({
+        "error": True,
+        "error_code": error_code,
+        "message": message,
+        "hint": hint,
+    }, ensure_ascii=False)
+
+
+def assert_positive_int(value: int, name: str) -> None:
+    """Layer 3 assertion: value must be positive integer."""
+    assert isinstance(value, int) and value > 0, (
+        f"[Layer3] {name} must be positive int, got {value!r}"
+    )
+
+
+def assert_valid_color(color: str) -> None:
+    """Layer 3 assertion: color must be RED/YELLOW/GREEN."""
+    assert color in ("RED", "YELLOW", "GREEN"), (
+        f"[Layer3] Invalid color '{color}', must be RED/YELLOW/GREEN"
+    )
 
 
 # =============================================================================

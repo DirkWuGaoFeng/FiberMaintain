@@ -1,0 +1,48 @@
+# Skill: 光纤连纤查询 (Fast Path) | 覆盖: R002, R101
+id: connection_query
+name: 光纤连纤查询
+version: "1.0"
+description: "查询光纤连接关系（跨网元纤链路）"
+
+triggers:
+  - pattern: "(?:查|看|查询)\\s*(?:光纤|FIB)[-_]?\\s*(\\d+)\\s*(?:的)?\\s*(?:连纤|连接|拓扑)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+  - pattern: "(?:分析|诊断|排查)?\\s*连纤\\s*(\\d+)\\s*(?:中断|断开|故障)\\s*(?:的)?\\s*(?:原因|问题)?"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+
+routing:
+  intent: connection_query
+  group: data_query
+  fast_path_eligible: true
+  template_id: T_CONNECTION
+
+tools:
+  - id: query_connection
+    endpoint: "/api/v1/topology/fibers/{fiber_id}"
+    method: GET
+    timeout: 2.0
+    params:
+      fiber_id: "{fiber_id}"
+    response_extract: {}
+
+template:
+  fast_path: "光纤 {fiber_id} 连纤信息：{data}"
+  status_map: {}
+
+collector_tools:
+  - fiber_connection_query
+  - fiber_scene_query
+
+test_cases:
+  - input: "查光纤 3 的连接"
+    expected_intent: connection_query
+    expected_params: { fiber_id: 3 }
+    expected_fast_path: true
+  - input: "连纤5中断的原因"
+    expected_intent: connection_query
+    expected_params: { fiber_id: 5 }
+    expected_fast_path: true

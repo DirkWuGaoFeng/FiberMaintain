@@ -11,11 +11,14 @@ Prompts are organized by sub-agent:
 
 from __future__ import annotations
 
-import os
+import re
 from pathlib import Path
 
 # Base directory for prompts
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
+
+# HTML 注释块（提示词文件内的编写说明，不发给 LLM）
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
 def load_prompt(sub_agent: str, name: str, default: str = "") -> str:
@@ -27,12 +30,25 @@ def load_prompt(sub_agent: str, name: str, default: str = "") -> str:
         default: Default content if file not found
 
     Returns:
-        Prompt content string
+        Prompt content string (HTML 注释块已剔除)
     """
     prompt_path = PROMPTS_DIR / sub_agent / f"{name}.md"
     if prompt_path.exists():
-        return prompt_path.read_text(encoding="utf-8")
+        text = prompt_path.read_text(encoding="utf-8")
+        return _HTML_COMMENT_RE.sub("", text).strip()
     return default
+
+
+def escape_for_template(text: str, keep_vars: tuple[str, ...] = ()) -> str:
+    """为 ChatPromptTemplate 转义字面花括号，保留指定模板变量。
+
+    提示词 md 以可读的单花括号存储；传入 ChatPromptTemplate 前，
+    字面 JSON 花括号需双写转义，模板变量（如 {loop_count}）经
+    keep_vars 声明后还原。"""
+    escaped = text.replace("{", "{{").replace("}", "}}")
+    for var in keep_vars:
+        escaped = escaped.replace("{{" + var + "}}", "{" + var + "}")
+    return escaped
 
 
 # =============================================================================
@@ -43,10 +59,6 @@ INTENT_CLASSIFIER_PROMPT = """You are the intent classifier for a fiber maintena
 Identify the user's intent and extract key parameters.
 Fiber ID format: FIB-XXXX (4-digit number, e.g., FIB-0001).
 Only output JSON, no explanation."""
-
-TASK_DECOMPOSER_PROMPT = """You are the task decomposer for a fiber maintenance system.
-Break down the user's request into ordered sub-tasks.
-Choose the execution strategy: single, sequential, parallel, or batch."""
 
 RESULT_AGGREGATOR_PROMPT = """You are the result aggregator for a fiber maintenance system.
 Summarize the analysis results into a clear, actionable response.

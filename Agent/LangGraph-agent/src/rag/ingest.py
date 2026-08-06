@@ -1,5 +1,11 @@
 """
-Knowledge base ingestion: load documents into ChromaDB vector store.
+Knowledge base ingestion [v7.1]: load documents into ChromaDB vector store.
+
+Features:
+- Chinese/English term annotations (TERM_ANNOTATIONS)
+- RecursiveCharacterTextSplitter (chunk_size=500, overlap=50)
+- Support Markdown/TXT/PDF ingestion
+- Category inference from filename
 """
 
 from __future__ import annotations
@@ -8,6 +14,38 @@ import logging
 import os
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Term Annotations [v7.1] — 中英文术语对照标注
+# =============================================================================
+
+TERM_ANNOTATIONS: dict[str, str] = {
+    "OTDR": "OTDR（光时域反射仪）",
+    "OOP": "OOP（输出光功率）",
+    "IOP": "IOP（输入光功率）",
+    "spanloss": "spanloss（跨段衰耗）",
+    "dB": "dB（分贝）",
+    "dBm": "dBm（分贝毫瓦）",
+    "NE": "NE（网元）",
+    "EMS": "EMS（网元管理系统）",
+    "NMS": "NMS（网络管理系统）",
+    "RED": "RED（红色/紧急）",
+    "YELLOW": "YELLOW（黄色/警告）",
+    "GREEN": "GREEN（绿色/正常）",
+    "PullCall": "PullCall（拉纤呼叫）",
+    "board": "board（板卡）",
+    "port": "port（端口）",
+    "fiber": "fiber（光纤）",
+}
+
+
+def annotate_terms(text: str) -> str:
+    """Add Chinese annotations to English technical terms."""
+    for term, annotated in TERM_ANNOTATIONS.items():
+        # Only annotate first occurrence to avoid clutter
+        if term in text and annotated not in text:
+            text = text.replace(term, annotated, 1)
+    return text
 
 
 def ingest_knowledge_base(kb_dir: str = "", persist_dir: str = "") -> int:
@@ -23,12 +61,12 @@ def ingest_knowledge_base(kb_dir: str = "", persist_dir: str = "") -> int:
     """
     from langchain_chroma import Chroma
     from langchain_core.documents import Document
-    from .embeddings import get_embeddings
+    from ..llm.provider import get_embedding_model
 
     kb_dir = kb_dir or os.path.join(os.path.dirname(__file__), "..", "..", "knowledge_base")
     persist_dir = persist_dir or os.environ.get("CHROMA_PERSIST_DIR", "data/chromadb")
 
-    embeddings = get_embeddings()
+    embeddings = get_embedding_model()
     vectorstore = Chroma(
         collection_name="fiber_knowledge",
         embedding_function=embeddings,

@@ -1,4 +1,4 @@
-.PHONY: dev test lint docker-build docker-up docker-down clean install start start-all frontend-dev
+.PHONY: dev test lint docker-build docker-up docker-down clean install start start-all frontend-dev hooks eval
 
 # Development
 install:
@@ -16,6 +16,17 @@ test-unit:
 
 test-integration:
 	pytest tests/integration/ -v
+
+# Regression gate: install pre-commit hooks (P0-A)
+# 配置位于仓库根 .pre-commit-config.yaml（monorepo，pre-commit 只认根配置）
+hooks:
+	pre-commit install
+	@echo "Hooks installed. prompts/skills/thresholds changes now trigger regression tests."
+
+# Evaluation: run E2E QA dataset (P0-C, manual gate)
+# Usage: make eval [EVAL_MODE=v7|v8]
+eval:
+	python scripts/run_eval.py --mode $(or $(EVAL_MODE),v7)
 
 # Linting
 lint:

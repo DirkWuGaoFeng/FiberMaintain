@@ -1,0 +1,46 @@
+# config/thresholds.yaml — 唯一权威阈值源
+# 与 knowledge_base/threshold_standard_光纤衰耗阈值表.md 保持同步
+# 修改此文件需同步更新知识库文档
+
+version: "1.0"
+
+# 链路总衰耗阈值 (dB) — 按链路长度分级
+link_spanloss:
+  - max_length_km: 10
+    normal: 4.0
+    warning: 6.0
+    critical: 8.0
+  - max_length_km: 40
+    normal: 12.0
+    warning: 16.0
+    critical: 20.0
+  - max_length_km: 80
+    normal: 22.0
+    warning: 28.0
+    critical: 35.0
+  - max_length_km: 999
+    normal: 30.0
+    warning: 35.0
+    critical: 42.0
+
+# 默认 fallback（纤类/长度未知时使用）
+default_spanloss:
+  warning: 5.0
+  critical: 8.0
+
+# 光功率正常范围 (dBm)
+optical_power:
+  OOP: { min: -10.0, max: 3.0 }
+  IOP: { min: -25.0, max: -5.0 }
+  OOP_IOP_diff: { max: 25.0, critical: 30.0 }
+
+# 单纤衰减系数 (dB/km) — 供分析参考
+attenuation_coefficients:
+  G.652:
+    "1310": { normal: 0.4, warning: 0.5, critical: 0.8 }
+    "1550": { normal: 0.3, warning: 0.4, critical: 0.6 }
+  G.655:
+    "1550": { normal: 0.3, warning: 0.4, critical: 0.6 }
+  G.651:
+    "850": { normal: 3.5, warning: 4.0, critical: 5.0 }
+    "1300": { normal: 1.5, warning: 2.0, critical: 3.0 }

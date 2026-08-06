@@ -1,0 +1,31 @@
+{
+  "/api/v1/alarms/current": {
+    "alarms": [
+      {
+        "alarm_id": 1001,
+        "board_id": 2,
+        "port_id": 1,
+        "alarm_type": "LOS",
+        "alarm_level": "CRITICAL",
+        "raised_at": "2026-07-30T08:15:00Z",
+        "description": "Loss of Signal on port 1"
+      },
+      {
+        "alarm_id": 1002,
+        "board_id": 5,
+        "port_id": 3,
+        "alarm_type": "B1_EXC",
+        "alarm_level": "WARNING",
+        "raised_at": "2026-07-30T09:30:00Z",
+        "description": "B1 error count exceeded threshold"
+      }
+    ],
+    "total": 2
+  },
+  "/api/v1/alarms/batch": {
+    "results": [
+      {"fiber_id": 1, "alarms": [], "count": 0},
+      {"fiber_id": 2, "alarms": [{"alarm_type": "LOS", "level": "CRITICAL"}], "count": 1}
+    ]
+  }
+}

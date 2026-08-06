@@ -1,0 +1,44 @@
+# Skill: 光纤统计查询 (Fast Path) | 覆盖: R030, R031
+id: stats_query
+name: 光纤统计查询
+version: "1.0"
+description: "查询光纤总数、颜色分布等统计信息"
+
+triggers:
+  - pattern: "(?:光纤|连纤)\\s*(?:总数|总共|一共|有多少|数量)"
+    params: {}
+    confidence: 1.0
+  - pattern: "(?:颜色|色标)\\s*(?:分布|统计|占比)"
+    params: {}
+    confidence: 1.0
+
+routing:
+  intent: stats_query
+  group: data_query
+  fast_path_eligible: true
+  template_id: T_STATS
+
+tools:
+  - id: query_stats
+    endpoint: "/api/v1/fibers/stats"
+    method: GET
+    timeout: 2.0
+    params: {}
+    response_extract: {}
+
+template:
+  fast_path: "光纤统计：{data}"
+  status_map: {}
+
+collector_tools:
+  - fiber_stats_query
+
+test_cases:
+  - input: "光纤总数有多少"
+    expected_intent: stats_query
+    expected_params: {}
+    expected_fast_path: true
+  - input: "颜色分布统计"
+    expected_intent: stats_query
+    expected_params: {}
+    expected_fast_path: true

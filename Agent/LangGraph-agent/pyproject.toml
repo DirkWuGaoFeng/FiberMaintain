@@ -1,7 +1,7 @@
 [project]
 name = "fiber-maintenance-agent"
-version = "5.0.0"
-description = "Fiber Maintenance Intelligent Agent System based on LangChain + LangGraph"
+version = "7.2.0"
+description = "Fiber Maintenance Intelligent Agent System based on LangChain + LangGraph (v7.2)"
 requires-python = ">=3.11"
 readme = "README.md"
 
@@ -11,6 +11,7 @@ dependencies = [
     "langchain-core>=0.3.60",
     "langchain-community>=0.3.20",
     "langchain-ollama>=0.3.0",
+    "langchain-openai>=0.3.0",
     "langchain-chroma>=0.2.0",
     # LangGraph core
     "langgraph>=1.0.8",
@@ -20,25 +21,28 @@ dependencies = [
     # Web framework
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
+    "sse-starlette>=2.0",
     # HTTP client
     "httpx>=0.28.0",
+    # WebSocket
+    "websockets>=13.0",
     # RAG
     "chromadb>=0.6.0",
-    "sentence-transformers>=3.4.0",
     "rank-bm25>=0.2.2",
     # Export
     "reportlab>=4.3.0",
     "openpyxl>=3.1.0",
     "matplotlib>=3.10.0",
     # Observability
-    "langsmith>=0.3.0",
     "prometheus-client>=0.21.0",
     # Data
     "pydantic>=2.10.0",
     "aiosqlite>=0.20.0",
+    # Scheduling
+    "apscheduler>=3.10.0",
     # Utilities
     "python-dotenv>=1.0.0",
-    "tiktoken>=0.8.0",
+    "pyyaml>=6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +52,7 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "pre-commit>=3.6.0",
 ]
 
 [build-system]

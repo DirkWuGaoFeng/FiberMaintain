@@ -1,0 +1,40 @@
+# Skill: 光纤告警查询 (Fast Path) | 覆盖: R004
+id: fiber_alarm_query
+name: 光纤告警查询
+version: "1.0"
+description: "查询单条光纤的告警信息"
+
+triggers:
+  - pattern: "(?:查|看|查询)\\s*(?:光纤|FIB)[-_]?\\s*(\\d+)\\s*(?:的)?\\s*(?:告警|alarm)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+
+routing:
+  intent: fiber_alarm_query
+  group: data_query
+  fast_path_eligible: true
+  template_id: T_FIBER_ALARM
+
+tools:
+  - id: query_fiber_alarm
+    endpoint: "/api/v1/topology/fibers/{fiber_id}"
+    method: GET
+    timeout: 2.0
+    params:
+      fiber_id: "{fiber_id}"
+    response_extract: {}
+
+template:
+  fast_path: "光纤 {fiber_id} 告警信息：{data}"
+  status_map: {}
+
+collector_tools:
+  - alarm_query
+  - fiber_connection_query
+
+test_cases:
+  - input: "查光纤 4 的告警"
+    expected_intent: fiber_alarm_query
+    expected_params: { fiber_id: 4 }
+    expected_fast_path: true

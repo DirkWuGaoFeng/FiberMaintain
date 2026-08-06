@@ -1,0 +1,48 @@
+# Skill: 批量查询 (Normal Path) | 覆盖: R070, R071
+id: batch_query
+name: 批量光纤查询
+version: "1.0"
+description: "批量查询多条光纤的性能/告警/状态"
+
+triggers:
+  - pattern: "(?:所有|全部|批量)\\s*(红色|RED|绿色|GREEN|黄色|YELLOW)\\s*(?:光纤|的)"
+    params:
+      color: { group: 1, type: color }
+    confidence: 1.0
+  - pattern: "(?:查|看|批量查)\\s*(?:所有|全部)\\s*(?:光纤|连纤)"
+    params: {}
+    confidence: 1.0
+  # 批量枚举："光纤2、4、6" / "光纤2和4" → fiber_refs 列表
+  - pattern: "(?:光纤|FIB)[-_]?\\s*(\\d+(?:\\s*[、,，和与]\\s*\\d+)+)"
+    params:
+      fiber_refs: { group: 1, type: int_list }
+    confidence: 1.0
+  # 批量区间："光纤1到10" → 展开为 fiber_refs 列表
+  # 注意：分隔符不能含 '-'，否则会误匹配 FIB-0012 等标识
+  - pattern: "(?:光纤|FIB)[-_]?\\s*(\\d+\\s*(?:到|至|~)\\s*\\d+)"
+    params:
+      fiber_refs: { group: 1, type: int_range }
+    confidence: 1.0
+
+routing:
+  intent: batch_query
+  group: batch
+  fast_path_eligible: false
+  template_id: ""
+
+tools: []
+
+collector_tools:
+  - batch_fiber_performance_query
+  - batch_alarm_query
+  - batch_fiber_connection_query
+
+test_cases:
+  - input: "所有红色光纤的性能"
+    expected_intent: batch_query
+    expected_params: { color: "RED" }
+    expected_fast_path: false
+  - input: "批量查所有光纤"
+    expected_intent: batch_query
+    expected_params: {}
+    expected_fast_path: false

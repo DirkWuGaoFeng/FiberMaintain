@@ -1,0 +1,38 @@
+# Skill: 趋势查询 (Fast Path) | 覆盖: R032
+id: trend_query
+name: 光纤趋势查询
+version: "1.0"
+description: "查询光纤性能趋势数据"
+
+triggers:
+  - pattern: "(?:趋势|变化|统计)\\s*(?:图|数据|报告)?"
+    params: {}
+    confidence: 1.0
+
+routing:
+  intent: trend_query
+  group: data_query
+  fast_path_eligible: true
+  template_id: T_TREND
+
+tools:
+  - id: query_trend
+    endpoint: "/api/v1/fibers/stats/trend"
+    method: GET
+    timeout: 2.0
+    params: {}
+    response_extract: {}
+
+template:
+  fast_path: "光纤趋势数据：{data}"
+  status_map: {}
+
+collector_tools:
+  - fiber_trend_query
+  - fiber_stats_query
+
+test_cases:
+  - input: "趋势数据"
+    expected_intent: trend_query
+    expected_params: {}
+    expected_fast_path: true

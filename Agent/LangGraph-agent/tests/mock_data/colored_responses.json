@@ -1,0 +1,30 @@
+{
+  "/api/v1/fibers/colored": {
+    "fibers": [
+      {"fiber_id": 3, "color": "RED", "spanloss": 9.2, "ne_src": "NE-West-01", "ne_dst": "NE-South-01"},
+      {"fiber_id": 7, "color": "RED", "spanloss": 8.5, "ne_src": "NE-East-01", "ne_dst": "NE-North-01"},
+      {"fiber_id": 12, "color": "RED", "spanloss": 10.1, "ne_src": "NE-South-01", "ne_dst": "NE-East-01"}
+    ],
+    "total": 3,
+    "color_filter": "RED"
+  },
+  "/api/v1/fibers/colored/all": {
+    "red": [
+      {"fiber_id": 3, "spanloss": 9.2},
+      {"fiber_id": 7, "spanloss": 8.5},
+      {"fiber_id": 12, "spanloss": 10.1}
+    ],
+    "yellow": [
+      {"fiber_id": 2, "spanloss": 6.5},
+      {"fiber_id": 5, "spanloss": 5.8},
+      {"fiber_id": 8, "spanloss": 7.1},
+      {"fiber_id": 15, "spanloss": 6.2},
+      {"fiber_id": 22, "spanloss": 5.5},
+      {"fiber_id": 30, "spanloss": 6.8},
+      {"fiber_id": 45, "spanloss": 7.3},
+      {"fiber_id": 60, "spanloss": 5.9}
+    ],
+    "green_count": 109,
+    "total": 120
+  }
+}

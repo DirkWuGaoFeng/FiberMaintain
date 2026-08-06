@@ -1,0 +1,41 @@
+# Skill: 端口告警查询 (Fast Path) | 覆盖: R010
+id: port_alarm_query
+name: 端口告警查询
+version: "1.0"
+description: "查询指定单盘端口的告警信息"
+
+triggers:
+  - pattern: "(\\d+)\\s*号?\\s*(?:盘|单盘|板)\\s*(\\d+)\\s*号?\\s*(?:口|端口)\\s*(?:的)?\\s*(?:告警|alarm)"
+    params:
+      board_id: { group: 1, type: int }
+      port_id: { group: 2, type: int }
+    confidence: 1.0
+
+routing:
+  intent: port_alarm_query
+  group: data_query
+  fast_path_eligible: true
+  template_id: T_PORT_ALARM
+
+tools:
+  - id: query_port_alarm
+    endpoint: "/api/v1/alarms/current"
+    method: GET
+    timeout: 2.0
+    params:
+      board_id: "{board_id}"
+      port_id: "{port_id}"
+    response_extract: {}
+
+template:
+  fast_path: "{board_id}号盘{port_id}口 告警信息：{data}"
+  status_map: {}
+
+collector_tools:
+  - alarm_query
+
+test_cases:
+  - input: "3号盘2口的告警"
+    expected_intent: port_alarm_query
+    expected_params: { board_id: 3, port_id: 2 }
+    expected_fast_path: true

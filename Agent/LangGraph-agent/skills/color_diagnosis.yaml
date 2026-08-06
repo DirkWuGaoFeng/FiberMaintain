@@ -1,0 +1,53 @@
+# Skill: 光纤颜色诊断 (Normal Path) | 覆盖: R050, R051
+id: color_diagnosis
+name: 光纤颜色诊断
+version: "1.0"
+description: "诊断光纤变红/变黄的原因（多步分析）"
+
+triggers:
+  - pattern: "(?:光纤|FIB)[-_]?\\s*(\\d+)\\s*(?:为什么|为何|怎么)\\s*(?:变)?(?:红|红色)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+  - pattern: "(?:光纤|FIB)[-_]?\\s*(\\d+)\\s*(?:为什么|为何|怎么)\\s*(?:变)?(?:黄|黄色)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+
+routing:
+  intent: color_diagnosis
+  group: data_query
+  fast_path_eligible: false
+  template_id: ""
+
+tools: []
+
+judgment:
+  metric: color
+  extract_pattern: "color[=:]\\s*(\\w+)"
+  conditions:
+    - op: "=="
+      value: "RED"
+      status: CRITICAL
+      finding: "光纤颜色为红色（中断）"
+  default:
+    status: NORMAL
+    finding: "光纤颜色正常"
+  actions:
+    CRITICAL: ["立即排查中断原因", "检查关联告警"]
+
+collector_tools:
+  - fiber_spanloss_query
+  - fiber_performance_query
+  - alarm_query
+  - fiber_trend_query
+
+test_cases:
+  - input: "光纤 5 为什么变红了"
+    expected_intent: color_diagnosis
+    expected_params: { fiber_id: 5 }
+    expected_fast_path: false
+  - input: "FIB-3怎么变黄了"
+    expected_intent: color_diagnosis
+    expected_params: { fiber_id: 3 }
+    expected_fast_path: false

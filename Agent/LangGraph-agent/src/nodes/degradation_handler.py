@@ -1,87 +1,89 @@
 """
-Degradation handler node: implements L3 rule-based and L4 pure-RAG fallback.
+Degradation Handler Node — Graceful degradation when services fail.
+
+Handles L3 (no LLM) and L4 (backend offline) degradation:
+- L3: Keep tool queries + rule template output
+- L4: Local cache + pure RAG + explicit notification
 """
 
 from __future__ import annotations
 
 import logging
 
-from ..graph.state import FiberAgentState
+from langchain_core.messages import AIMessage
+
+from ..graph.state import MainGraphState
 
 logger = logging.getLogger(__name__)
 
-# L3 templates for common scenarios
-L3_TEMPLATES = {
-    "single_query": """## Fiber Query Result (Offline Mode)
 
-The system is currently unable to perform real-time analysis.
-Please check the backend service status and try again.
-
-For urgent matters, contact the on-call engineer.
-""",
-    "batch_query": """## Batch Query Result (Offline Mode)
-
-Batch processing is temporarily unavailable.
-Please try querying fibers individually.
-""",
-    "spanloss_analysis": """## Span Loss Analysis (Offline Mode)
-
-Real-time span loss analysis is unavailable.
-Reference thresholds:
-- GREEN: < 0.3 dB (normal)
-- YELLOW: 0.3 - 0.5 dB (warning)
-- RED: > 0.5 dB (critical)
-""",
-    "color_diagnosis": """## Color Diagnosis (Offline Mode)
-
-Color diagnosis is temporarily unavailable.
-Color definitions:
-- GREEN: Normal operation
-- YELLOW: Approaching threshold
-- RED: Critical, requires immediate attention
-""",
-    "health_check": """## Health Check (Offline Mode)
-
-System health check is unavailable.
-Please check backend service connectivity.
-""",
-}
-
-
-async def degradation_handler_node(state: FiberAgentState) -> dict:
+async def degradation_handler_node(state: MainGraphState) -> dict:
     """
-    Degradation handler: provides fallback responses when LLM or backend is unavailable.
+    Degradation handler: produce output when normal path is unavailable.
 
-    L3: Rule-based template output (white-list scenarios)
-    L4: Pure RAG mode (only knowledge base, no LLM)
+    Uses rule_judgment data directly (no LLM) or cache data.
     """
-    level = state.get("degradation_level", "L1")
-    intent = state.get("intent")
+    level = state.get("degradation_level", 0)
+    judgment = state.get("rule_judgment")
+    data_summary = state.get("collected_data_summary", "")
 
-    if level == "L3":
-        intent_type = intent.intent if intent else "single_query"
-        template = L3_TEMPLATES.get(intent_type)
-        if template:
-            # Try to fill in data if available
-            fiber_data = state.get("fiber_data", {})
-            if fiber_data and "total" in fiber_data:
-                template += f"\n\nLast known stats: {fiber_data.get('total', 'N/A')} total fibers."
-            return {"final_report": template}
-        else:
-            return {"final_report": "System is in degraded mode. This query type is not supported offline."}
+    if level >= 4:
+        # L4: Backend offline, try cache
+        output = _handle_l4_offline(state)
+    elif level >= 3:
+        # L3: No LLM available, use template
+        output = _handle_l3_no_llm(judgment, data_summary)
+    else:
+        # L1/L2: Simplified output
+        output = _handle_simplified(judgment, data_summary)
 
-    elif level == "L4":
-        # Pure RAG mode: use knowledge base only
-        rag_context = state.get("rag_context", [])
-        if rag_context:
-            answer = "\n\n---\n\n".join(rag_context[:3])
-            return {
-                "final_report": f"## Knowledge Base Response (Offline Mode)\n\n{answer}"
-            }
-        else:
-            return {
-                "final_report": "System is fully offline. Knowledge base is unavailable. Please check system status."
-            }
+    return {
+        "messages": [AIMessage(content=output)],
+        "final_output": output,
+        "processing_path": "degraded",
+    }
 
-    # L1/L2: no degradation needed
-    return {}
+
+def _handle_l3_no_llm(judgment: dict | None, data_summary: str) -> str:
+    """L3: No LLM, use rule template output."""
+    if judgment:
+        status = judgment.get("status", "UNKNOWN")
+        findings = judgment.get("findings", [])
+        actions = judgment.get("suggested_actions", [])
+
+        lines = [f"📊 光纤状态：{status}"]
+        for f in findings:
+            lines.append(f"  • {f}")
+        if actions:
+            lines.append(f"💡 建议：{'；'.join(actions)}")
+        lines.append("\n⚠️ （分析服务暂不可用，以上为规则引擎判断结果）")
+        return "\n".join(lines)
+
+    if data_summary:
+        return f"📋 数据已查到，分析暂不可用：\n{data_summary[:500]}"
+
+    return "⚠️ 分析服务暂时不可用，请稍后重试。数据查询功能正常。"
+
+
+def _handle_l4_offline(state: MainGraphState) -> str:
+    """L4: Backend offline, provide cached data if available."""
+    return (
+        "⚠️ 后端服务当前离线。\n"
+        "  • 实时数据查询暂不可用\n"
+        "  • 知识问答功能正常\n"
+        "  • 请稍后重试或联系管理员\n"
+        "\n（系统将在后端恢复后自动切回正常模式）"
+    )
+
+
+def _handle_simplified(judgment: dict | None, data_summary: str) -> str:
+    """L1/L2: Simplified output with available data."""
+    if judgment:
+        findings = judgment.get("findings", [])
+        if findings:
+            return "📋 分析结果：\n" + "\n".join(f"  • {f}" for f in findings)
+
+    if data_summary:
+        return f"📋 查询结果：\n{data_summary[:500]}"
+
+    return "处理完成，但未能获取详细分析。请稍后重试。"

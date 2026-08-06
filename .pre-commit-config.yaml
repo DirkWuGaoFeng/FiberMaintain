@@ -1,0 +1,25 @@
+# =============================================================================
+# pre-commit 回归门禁配置 [改进清单 P0-A]
+#
+# 注意：本仓库 git 根为 monorepo 根目录，pre-commit 只识别根目录配置，
+# 因此本文件必须位于仓库根（而非 Agent/LangGraph-agent/ 子目录）。
+#
+# 当 Agent/LangGraph-agent 的 prompts/ / skills/ / config/thresholds 变更时，
+# 自动运行单元测试回归，防止 Prompt/Skill 修改导致的行为退化。
+#
+# 安装：在 Agent/LangGraph-agent/ 下执行 make hooks（等价于 pre-commit install）
+# 手动运行：pre-commit run --all-files
+# =============================================================================
+
+repos:
+  - repo: local
+    hooks:
+      - id: agent-regression-gate
+        name: Agent Prompt/Skill 回归门禁
+        entry: python Agent/LangGraph-agent/scripts/regression_gate.py
+        language: system
+        pass_filenames: false
+        # regression_gate.py 内部通过 git diff --cached 检测
+        # prompts/ / skills/ / config/thresholds 变更并决定是否跑回归
+        # （已做 monorepo 路径前缀归一化）
+        always_run: true

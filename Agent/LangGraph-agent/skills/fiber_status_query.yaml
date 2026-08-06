@@ -1,0 +1,54 @@
+# Skill: 光纤状态查询 (Fast Path) | 覆盖: R005, R100, R102
+id: fiber_status_query
+name: 光纤状态查询
+version: "1.0"
+description: "查询光纤颜色/状态（通用单纤查询兜底）"
+
+triggers:
+  - pattern: "(?:查|看|查询)\\s*(?:光纤|FIB)[-_]?\\s*(\\d+)\\s*(?:的)?\\s*(?:颜色|状态|色标)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+  - pattern: "连纤\\s*(\\d+)\\s*(?:的)?\\s*(?:颜色|色标|状态)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+  - pattern: "(?:查|看|查询)\\s*(?:光纤|FIB)[-_]?\\s*(\\d+)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+    priority: 999  # catch-all 兆底，最后匹配
+
+routing:
+  intent: single_query
+  group: data_query
+  fast_path_eligible: true
+  template_id: T_FIBER_STATUS
+  priority: 50  # “颜色/状态”查询需先于其他模式
+
+tools:
+  - id: query_fiber_status
+    endpoint: "/api/v1/fibers/{fiber_id}/spanloss"
+    method: GET
+    timeout: 2.0
+    params:
+      fiber_id: "{fiber_id}"
+    response_extract: {}
+
+template:
+  fast_path: "光纤 {fiber_id} 状态：{data}"
+  status_map: {}
+
+collector_tools:
+  - fiber_connection_query
+  - fiber_spanloss_query
+
+test_cases:
+  - input: "查光纤 6 的颜色"
+    expected_intent: single_query
+    expected_params: { fiber_id: 6 }
+    expected_fast_path: true
+  - input: "连纤8的状态"
+    expected_intent: single_query
+    expected_params: { fiber_id: 8 }
+    expected_fast_path: true

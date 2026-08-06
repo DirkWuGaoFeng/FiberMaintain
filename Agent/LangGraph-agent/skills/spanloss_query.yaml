@@ -1,0 +1,81 @@
+# ============================================================
+# Skill: 光纤衰耗查询 (Fast Path)
+# 覆盖规则: R001, R105
+# ============================================================
+
+id: spanloss_query
+name: 光纤衰耗查询
+version: "1.0"
+description: "查询单条光纤的跨段衰耗值并做阈值判断"
+author: "fiber-team"
+
+triggers:
+  - pattern: "(?:查|看|查询|查一下)\\s*(?:光纤|FIB)[-_]?\\s*(\\d+)\\s*(?:的)?\\s*(?:跨段)?(?:衰耗|spanloss|损耗)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+  - pattern: "(?:光纤|连纤|FIB)[-_]?\\s*(\\d+)\\s*(?:的)?\\s*(?:跨段)?(?:衰耗|损耗|spanloss)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+
+routing:
+  intent: spanloss_query
+  group: data_query
+  fast_path_eligible: true
+  template_id: T_SPANLOSS
+
+tools:
+  - id: query_spanloss
+    endpoint: "/api/v1/fibers/{fiber_id}/spanloss"
+    method: GET
+    timeout: 2.0
+    params:
+      fiber_id: "{fiber_id}"
+    response_extract:
+      spanloss: "$.spanloss"
+
+judgment:
+  metric: spanloss
+  extract_pattern: "spanloss[=:]\\s*([\\d.]+)"
+  conditions:
+    - op: ">"
+      value: "${SPANLOSS_CRITICAL}"
+      status: CRITICAL
+      finding: "衰耗 {value}dB 严重超标（阈值 ${SPANLOSS_THRESHOLD}dB，超出 {percent}%）"
+    - op: ">"
+      value: "${SPANLOSS_THRESHOLD}"
+      status: WARNING
+      finding: "衰耗 {value}dB 超过阈值 ${SPANLOSS_THRESHOLD}dB"
+  default:
+    status: NORMAL
+    finding: "衰耗 {value}dB，在阈值内，正常"
+  actions:
+    CRITICAL: ["立即派单检修", "检查关联光纤", "通知值班主管"]
+    WARNING: ["列入巡检计划", "持续监控趋势"]
+
+template:
+  fast_path: "光纤 {fiber_id} 当前衰耗为 {spanloss} dB（阈值 ${SPANLOSS_THRESHOLD} dB），{status_text}。"
+  status_map:
+    CRITICAL: "⚠️ 严重超标，建议立即检修"
+    WARNING: "⚡ 超过阈值，建议关注"
+    NORMAL: "✅ 正常"
+
+collector_tools:
+  - fiber_spanloss_query
+  - fiber_performance_query
+  - alarm_query
+
+test_cases:
+  - input: "查光纤 3 的衰耗"
+    expected_intent: spanloss_query
+    expected_params: { fiber_id: 3 }
+    expected_fast_path: true
+  - input: "FIB-005 spanloss 多少"
+    expected_intent: spanloss_query
+    expected_params: { fiber_id: 5 }
+    expected_fast_path: true
+  - input: "光纤12的跨段损耗"
+    expected_intent: spanloss_query
+    expected_params: { fiber_id: 12 }
+    expected_fast_path: true

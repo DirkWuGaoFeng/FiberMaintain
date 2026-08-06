@@ -1,0 +1,65 @@
+{
+  "/api/v1/fibers/1/spanloss": {
+    "fiber_id": 1,
+    "spanloss": 3.2,
+    "unit": "dB",
+    "measured_at": "2026-07-30T10:00:00Z",
+    "threshold": 5.0,
+    "status": "normal"
+  },
+  "/api/v1/fibers/2/spanloss": {
+    "fiber_id": 2,
+    "spanloss": 6.5,
+    "unit": "dB",
+    "measured_at": "2026-07-30T10:00:00Z",
+    "threshold": 5.0,
+    "status": "warning"
+  },
+  "/api/v1/fibers/3/spanloss": {
+    "fiber_id": 3,
+    "spanloss": 9.2,
+    "unit": "dB",
+    "measured_at": "2026-07-30T10:00:00Z",
+    "threshold": 5.0,
+    "status": "critical"
+  },
+  "/api/v1/fibers/1/performance": {
+    "fiber_id": 1,
+    "oop": -3.5,
+    "iop": -10.2,
+    "spanloss": 3.2,
+    "snr": 28.5,
+    "ber": 1.0e-12,
+    "measured_at": "2026-07-30T10:00:00Z"
+  },
+  "/api/v1/fibers/2/performance": {
+    "fiber_id": 2,
+    "oop": -4.8,
+    "iop": -12.1,
+    "spanloss": 6.5,
+    "snr": 22.1,
+    "ber": 5.0e-9,
+    "measured_at": "2026-07-30T10:00:00Z"
+  },
+  "/api/v1/fibers/1/performance/history": {
+    "fiber_id": 1,
+    "history": [
+      {"timestamp": "2026-07-29T10:00:00Z", "oop": -3.4, "iop": -10.1, "spanloss": 3.1},
+      {"timestamp": "2026-07-28T10:00:00Z", "oop": -3.5, "iop": -10.3, "spanloss": 3.3},
+      {"timestamp": "2026-07-27T10:00:00Z", "oop": -3.6, "iop": -10.2, "spanloss": 3.2}
+    ]
+  },
+  "/api/v1/fibers/batch/performance": {
+    "results": [
+      {"fiber_id": 1, "found": true, "oop": -3.5, "iop": -10.2, "spanloss": 3.2},
+      {"fiber_id": 2, "found": true, "oop": -4.8, "iop": -12.1, "spanloss": 6.5}
+    ]
+  },
+  "/api/v1/fibers/batch/spanloss": {
+    "results": [
+      {"fiber_id": 1, "found": true, "spanloss": 3.2},
+      {"fiber_id": 2, "found": true, "spanloss": 6.5},
+      {"fiber_id": 3, "found": true, "spanloss": 9.2}
+    ]
+  }
+}

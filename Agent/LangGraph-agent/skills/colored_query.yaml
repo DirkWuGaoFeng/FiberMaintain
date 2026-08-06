@@ -1,0 +1,56 @@
+# Skill: 颜色光纤查询 (Fast Path) | 覆盖: R020-R022, R103
+id: colored_query
+name: 颜色光纤查询
+version: "1.0"
+description: "按颜色查询光纤列表（红/黄/绿）"
+
+triggers:
+  - pattern: "(?:有哪些|多少|查|看|列出)\\s*(红色|RED|red)\\s*(?:光纤|的)?"
+    params:
+      color: { group: 1, type: color }
+    confidence: 1.0
+  - pattern: "(?:有哪些|多少|查|看|列出)\\s*(黄色|YELLOW|yellow)\\s*(?:光纤|的)?"
+    params:
+      color: { group: 1, type: color }
+    confidence: 1.0
+  - pattern: "(?:有哪些|多少|查|看|列出)\\s*(绿色|GREEN|green)\\s*(?:光纤|的)?"
+    params:
+      color: { group: 1, type: color }
+    confidence: 1.0
+  - pattern: "(?:目前|当前|现在)?\\s*(?:断纤|中断光纤|断开的光纤)\\s*(?:有哪些|列表|多少|查询)?"
+    params:
+      color: { value: "RED" }
+    confidence: 1.0
+
+routing:
+  intent: colored_query
+  group: data_query
+  fast_path_eligible: true
+  template_id: T_COLORED
+
+tools:
+  - id: query_colored
+    endpoint: "/api/v1/fibers/colored"
+    method: GET
+    timeout: 2.0
+    params:
+      color: "{color}"
+    response_extract: {}
+
+template:
+  fast_path: "{color}光纤查询结果：{data}"
+  status_map: {}
+
+collector_tools:
+  - colored_fibers_query
+  - all_colored_fibers_query
+
+test_cases:
+  - input: "有哪些红色光纤"
+    expected_intent: colored_query
+    expected_params: { color: "RED" }
+    expected_fast_path: true
+  - input: "断纤有哪些"
+    expected_intent: colored_query
+    expected_params: { color: "RED" }
+    expected_fast_path: true

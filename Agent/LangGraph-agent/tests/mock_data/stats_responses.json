@@ -1,0 +1,29 @@
+{
+  "/api/v1/fibers/stats/realtime": {
+    "total_fibers": 120,
+    "red_count": 3,
+    "yellow_count": 8,
+    "green_count": 109,
+    "active_alarms": 5,
+    "last_updated": "2026-07-30T10:00:00Z"
+  },
+  "/api/v1/fibers/stats": {
+    "total_fibers": 120,
+    "by_color": {"RED": 3, "YELLOW": 8, "GREEN": 109},
+    "by_status": {"active": 115, "inactive": 5},
+    "avg_spanloss": 4.2,
+    "max_spanloss": 9.2,
+    "min_spanloss": 1.1
+  },
+  "/api/v1/fibers/stats/trend": {
+    "points": [
+      {"timestamp": "2026-07-24T00:00:00Z", "red_count": 1, "yellow_count": 5, "total_colored": 6},
+      {"timestamp": "2026-07-25T00:00:00Z", "red_count": 2, "yellow_count": 6, "total_colored": 8},
+      {"timestamp": "2026-07-26T00:00:00Z", "red_count": 2, "yellow_count": 7, "total_colored": 9},
+      {"timestamp": "2026-07-27T00:00:00Z", "red_count": 3, "yellow_count": 7, "total_colored": 10},
+      {"timestamp": "2026-07-28T00:00:00Z", "red_count": 3, "yellow_count": 8, "total_colored": 11},
+      {"timestamp": "2026-07-29T00:00:00Z", "red_count": 3, "yellow_count": 8, "total_colored": 11},
+      {"timestamp": "2026-07-30T00:00:00Z", "red_count": 3, "yellow_count": 8, "total_colored": 11}
+    ]
+  }
+}

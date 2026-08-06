@@ -1,0 +1,30 @@
+# Skill: 知识问答 (Normal Path) | 覆盖: R040
+id: knowledge_qa
+name: 知识问答
+version: "1.0"
+description: "基于 RAG 的光纤维护知识问答"
+
+triggers:
+  - pattern: "(?:什么是|解释|定义|含义)\\s*(.{2,20})"
+    params:
+      question: { group: 1, type: str }
+    confidence: 1.0
+
+routing:
+  intent: knowledge_qa
+  group: knowledge
+  fast_path_eligible: false
+  template_id: ""
+
+tools: []
+
+collector_tools:
+  - rag_query
+  - rag_search
+  - memory_query
+
+test_cases:
+  - input: "什么是OTDR"
+    expected_intent: knowledge_qa
+    expected_params: { question: "OTDR" }
+    expected_fast_path: false

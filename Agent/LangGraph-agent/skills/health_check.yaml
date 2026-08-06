@@ -1,0 +1,30 @@
+# Skill: 健康检查 (Normal Path) | 覆盖: R080
+id: health_check
+name: 系统健康检查
+version: "1.0"
+description: "检查所有光纤/设备的健康状态"
+
+triggers:
+  - pattern: "(?:系统|设备|网元)\\s*(?:健康|状态|巡检)\\s*(?:检查|报告)?"
+    params: {}
+    confidence: 1.0
+
+routing:
+  intent: health_check
+  group: data_query
+  fast_path_eligible: false
+  template_id: ""
+
+tools: []
+
+collector_tools:
+  - fiber_spanloss_query
+  - fiber_performance_query
+  - alarm_query
+  - fiber_stats_query
+
+test_cases:
+  - input: "系统健康检查"
+    expected_intent: health_check
+    expected_params: {}
+    expected_fast_path: false

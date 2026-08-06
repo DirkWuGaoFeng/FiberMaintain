@@ -1,0 +1,84 @@
+{
+  "/api/v1/topology/fibers/1": {
+    "fiber_id": 1,
+    "fiber_name": "FIB-0001",
+    "src_board": {"board_id": 1, "board_type": "OLP", "ne_id": 100, "ne_name": "NE-East-01"},
+    "dst_board": {"board_id": 5, "board_type": "OLP", "ne_id": 200, "ne_name": "NE-West-01"},
+    "src_port": 3,
+    "dst_port": 1,
+    "fiber_length_km": 42.5,
+    "status": "active"
+  },
+  "/api/v1/topology/fibers/2": {
+    "fiber_id": 2,
+    "fiber_name": "FIB-0002",
+    "src_board": {"board_id": 2, "board_type": "OA", "ne_id": 100, "ne_name": "NE-East-01"},
+    "dst_board": {"board_id": 6, "board_type": "OA", "ne_id": 300, "ne_name": "NE-South-01"},
+    "src_port": 1,
+    "dst_port": 2,
+    "fiber_length_km": 78.3,
+    "status": "active"
+  },
+  "/api/v1/topology/fibers/3": {
+    "fiber_id": 3,
+    "fiber_name": "FIB-0003",
+    "src_board": {"board_id": 3, "board_type": "OMU", "ne_id": 200, "ne_name": "NE-West-01"},
+    "dst_board": {"board_id": 7, "board_type": "ODU", "ne_id": 300, "ne_name": "NE-South-01"},
+    "src_port": 2,
+    "dst_port": 4,
+    "fiber_length_km": 15.8,
+    "status": "active"
+  },
+  "/api/v1/topology/fibers/1/scene": {
+    "fiber_id": 1,
+    "src_ne": {"ne_id": 100, "ne_name": "NE-East-01", "ne_type": "OTM"},
+    "dst_ne": {"ne_id": 200, "ne_name": "NE-West-01", "ne_type": "OTM"},
+    "src_board": {"board_id": 1, "board_type": "OLP", "slot": 3},
+    "dst_board": {"board_id": 5, "board_type": "OLP", "slot": 1},
+    "internal_fibers": [
+      {"fiber_id": 101, "type": "internal", "src_port": 1, "dst_port": 2}
+    ],
+    "passive_boards": [
+      {"board_id": 10, "board_type": "ODF", "ne_id": 100}
+    ]
+  },
+  "/api/v1/topology/fibers/batch": {
+    "results": [
+      {"fiber_id": 1, "found": true, "src_board_id": 1, "dst_board_id": 5},
+      {"fiber_id": 2, "found": true, "src_board_id": 2, "dst_board_id": 6},
+      {"fiber_id": 999, "found": false, "error_message": "Fiber not found"}
+    ],
+    "total": 3,
+    "found_count": 2
+  },
+  "/api/v1/boards/1": {
+    "board_id": 1,
+    "board_type": "OLP",
+    "ne_id": 100,
+    "ne_name": "NE-East-01",
+    "slot": 3,
+    "status": "normal",
+    "ports": [
+      {"port_id": 1, "status": "active", "optical_power": -3.2},
+      {"port_id": 2, "status": "active", "optical_power": -4.1},
+      {"port_id": 3, "status": "active", "optical_power": -2.8}
+    ]
+  },
+  "/api/v1/boards/2": {
+    "board_id": 2,
+    "board_type": "OA",
+    "ne_id": 100,
+    "ne_name": "NE-East-01",
+    "slot": 5,
+    "status": "normal",
+    "ports": [
+      {"port_id": 1, "status": "active", "optical_power": -5.5}
+    ]
+  },
+  "/api/v1/boards/batch": {
+    "results": [
+      {"board_id": 1, "found": true, "board_type": "OLP", "ne_id": 100},
+      {"board_id": 2, "found": true, "board_type": "OA", "ne_id": 100}
+    ]
+  }
+}

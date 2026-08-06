@@ -1,0 +1,52 @@
+# Skill: 光纤性能查询 (Fast Path) | 覆盖: R003, R090
+id: performance_query
+name: 光纤性能查询
+version: "1.0"
+description: "查询光纤性能数据（光功率 OOP/IOP）"
+
+triggers:
+  - pattern: "(?:查|看|查询)\\s*(?:光纤|FIB)[-_]?\\s*(\\d+)\\s*(?:的)?\\s*(?:性能|光功率|OOP|IOP)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+  - pattern: "(?:光纤|FIB)[-_]?\\s*(\\d+)\\s*(?:的)?\\s*(?:性能|光功率|OOP|IOP)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+  - pattern: "(?:查|看)\\s*(?:光纤|FIB)[-_]?\\s*(\\d+)\\s*(?:的)?\\s*(?:历史|最近)\\s*(?:性能|光功率)"
+    params:
+      fiber_id: { group: 1, type: int }
+    confidence: 1.0
+
+routing:
+  intent: performance_query
+  group: data_query
+  fast_path_eligible: true
+  template_id: T_PERFORMANCE
+
+tools:
+  - id: query_performance
+    endpoint: "/api/v1/fibers/{fiber_id}/performance"
+    method: GET
+    timeout: 2.0
+    params:
+      fiber_id: "{fiber_id}"
+    response_extract: {}
+
+template:
+  fast_path: "光纤 {fiber_id} 性能数据：{data}"
+  status_map: {}
+
+collector_tools:
+  - fiber_performance_query
+  - fiber_spanloss_query
+
+test_cases:
+  - input: "查光纤 7 的性能"
+    expected_intent: performance_query
+    expected_params: { fiber_id: 7 }
+    expected_fast_path: true
+  - input: "光纤2的光功率"
+    expected_intent: performance_query
+    expected_params: { fiber_id: 2 }
+    expected_fast_path: true
