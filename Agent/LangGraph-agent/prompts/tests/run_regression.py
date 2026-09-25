@@ -3,7 +3,6 @@
 对比 Prompt 修改前后的输出质量，确保修改不会引入回归。
 """
 
-import json
 import sys
 from pathlib import Path
 
@@ -38,9 +37,9 @@ def run_regression(llm, test_cases: list[dict]) -> dict:
     if prompt_path.exists():
         system_prompt = prompt_path.read_text(encoding="utf-8")
     else:
-        system_prompt = "You are a helpful assistant."
+        system_prompt = "你是光纤维护系统的意图识别器。"
 
-    from langchain_core.messages import SystemMessage, HumanMessage
+    from langchain_core.messages import HumanMessage, SystemMessage
 
     for tc in test_cases:
         name = tc["name"]
@@ -108,7 +107,7 @@ def main():
     results = run_regression(llm, test_cases)
 
     print(f"\n{'='*60}")
-    print(f"Regression Test Results: {results['passed']}/{results['total']} passed")
+    print(f"回归测试结果：{results['passed']}/{results['total']} 通过")
     print(f"{'='*60}")
 
     for d in results["details"]:

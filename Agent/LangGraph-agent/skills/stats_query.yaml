@@ -20,7 +20,7 @@ routing:
 
 tools:
   - id: query_stats
-    endpoint: "/api/v1/fibers/stats"
+    endpoint: "/api/v1/fibers/stats/realtime"
     method: GET
     timeout: 2.0
     params: {}
