@@ -36,6 +36,7 @@ build/
 
 # IDE / Tool configs
 .qoder/
+.better-harness/
 
 # Third-party embedded repos
 Agent/deer-flow-agent/
