@@ -10,6 +10,7 @@
 """
 
 import json
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -90,23 +91,27 @@ class TestConsolidateStale:
 
     def test_old_experience_marked_stale(self, consolidator):
         cons = consolidator
+        # 用相对当前时刻的日期，避免硬编码日期随时钟漂移导致“近期”变“过期”
+        now = datetime.now()
+        old_at = (now - timedelta(days=60)).isoformat()    # 远超 stale_days=30 → 应过期
+        recent_at = (now - timedelta(days=1)).isoformat()  # 距今 1 天 → 应保持活跃
         conn = cons._conn()
         try:
             conn.execute(
                 "INSERT INTO analysis_experiences "
                 "(fiber_key, severity, conclusion, evidence, created_at) "
-                "VALUES ('5','WARNING','历史经验','[]','2026-01-01T00:00:00')"
+                f"VALUES ('5','WARNING','历史经验','[]','{old_at}')"
             )
             conn.execute(
                 "INSERT INTO analysis_experiences "
                 "(fiber_key, severity, conclusion, evidence, created_at) "
-                "VALUES ('5','WARNING','近期经验','[]','2026-08-01T00:00:00')"
+                f"VALUES ('5','WARNING','近期经验','[]','{recent_at}')"
             )
             conn.commit()
         finally:
             conn.close()
 
-        # stale_days=30 → 1 月的那条过期
+        # stale_days=30 → 60 天前那条过期
         report = cons.consolidate(stale_days=30)
         assert report.marked_stale >= 1
         stale = _rows(cons, stale_only=True)
