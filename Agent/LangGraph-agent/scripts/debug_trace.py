@@ -26,7 +26,7 @@ from pathlib import Path
 import httpx
 
 # =============================================================================
-# Configuration
+# 配置
 # =============================================================================
 
 AGENT_BASE = "http://localhost:8000"
@@ -38,12 +38,13 @@ DEFAULT_QUERY = "查询光纤 3 的跨段衰耗"
 
 # 超时配置
 PREFLIGHT_TIMEOUT = 5.0  # 预检超时
-INVOKE_TIMEOUT = 90.0    # 请求超时（比后端60s多留余量）
+INVOKE_TIMEOUT = 90.0  # 请求超时（比后端60s多留余量）
 
 
 # =============================================================================
-# Preflight Checks
+# 预检检查
 # =============================================================================
+
 
 def check_service(name: str, url: str, timeout: float = PREFLIGHT_TIMEOUT) -> dict:
     """检查服务是否可达，返回状态字典。"""
@@ -63,7 +64,7 @@ def check_service(name: str, url: str, timeout: float = PREFLIGHT_TIMEOUT) -> di
             "name": name,
             "status": "unreachable",
             "latency_ms": round((time.time() - start) * 1000, 1),
-            "detail": f"Connection refused — 服务未启动或端口不正确",
+            "detail": "Connection refused — 服务未启动或端口不正确",
         }
     except httpx.TimeoutException:
         return {
@@ -173,15 +174,16 @@ def _print_diagnosis(service_name: str, status: str):
 
 
 # =============================================================================
-# Invoke Test
+# Invoke 测试
 # =============================================================================
+
 
 def invoke_test(query: str) -> dict:
     """调用 Agent /invoke 端点并返回结果。"""
     print(f"\n{'=' * 60}")
-    print(f"  🚀 发送测试请求")
+    print("  🚀 发送测试请求")
     print(f"{'=' * 60}")
-    print(f"  Query: \"{query}\"")
+    print(f'  Query: "{query}"')
     print(f"  Endpoint: POST {AGENT_BASE}/invoke")
     print(f"  Timeout: {INVOKE_TIMEOUT}s")
     print(f"{'─' * 60}")
@@ -197,12 +199,12 @@ def invoke_test(query: str) -> dict:
 
         if resp.status_code == 200:
             data = resp.json()
-            print(f"\n  ✅ 请求成功")
+            print("\n  ✅ 请求成功")
             print(f"     总耗时: {elapsed_ms}ms")
             print(f"     处理路径: {data.get('processing_path', 'unknown')}")
             print(f"     Request ID: {data.get('request_id', 'N/A')}")
             print(f"     服务端耗时: {data.get('latency_ms', 'N/A')}ms")
-            print(f"\n  📝 输出:")
+            print("\n  📝 输出:")
             print(f"     {data.get('result', '(empty)')}")
             return {"success": True, "data": data, "elapsed_ms": elapsed_ms}
         else:
@@ -215,17 +217,17 @@ def invoke_test(query: str) -> dict:
         elapsed_ms = round((time.time() - start) * 1000, 1)
         print(f"\n  ❌ 请求超时 ({INVOKE_TIMEOUT}s)")
         print(f"     耗时: {elapsed_ms}ms")
-        print(f"\n  💡 诊断建议:")
-        print(f"     - 查询可能走了 LLM 路径（规则引擎未命中）且 Ollama 不可用")
-        print(f"     - 检查 Agent 日志中的 [TRACE:xxx] 行确认卡在哪个节点")
-        print(f"     - 尝试: python scripts/debug_trace.py --check 确认服务状态")
+        print("\n  💡 诊断建议:")
+        print("     - 查询可能走了 LLM 路径（规则引擎未命中）且 Ollama 不可用")
+        print("     - 检查 Agent 日志中的 [TRACE:xxx] 行确认卡在哪个节点")
+        print("     - 尝试: python scripts/debug_trace.py --check 确认服务状态")
         return {"success": False, "error": "timeout", "elapsed_ms": elapsed_ms}
 
     except httpx.ConnectError:
         elapsed_ms = round((time.time() - start) * 1000, 1)
-        print(f"\n  ❌ 无法连接到 Agent (localhost:8000)")
+        print("\n  ❌ 无法连接到 Agent (localhost:8000)")
         print(f"     耗时: {elapsed_ms}ms")
-        print(f"     💡 确认 Agent 已启动: python -m uvicorn src.server:app --port 8000")
+        print("     💡 确认 Agent 已启动: python -m uvicorn src.server:app --port 8000")
         return {"success": False, "error": "connect_error", "elapsed_ms": elapsed_ms}
 
     except Exception as e:
@@ -236,15 +238,16 @@ def invoke_test(query: str) -> dict:
 
 
 # =============================================================================
-# SSE Stream Test
+# SSE 流测试
 # =============================================================================
+
 
 def sse_test(query: str) -> dict:
     """测试 SSE 流端点，验证事件流和 final_output 事件。"""
     print(f"\n{'=' * 60}")
-    print(f"  📡 SSE 流测试")
+    print("  📡 SSE 流测试")
     print(f"{'=' * 60}")
-    print(f"  Query: \"{query}\"")
+    print(f'  Query: "{query}"')
     print(f"  Endpoint: POST {AGENT_BASE}/fiber-agent/stream")
     print(f"{'─' * 60}")
 
@@ -274,7 +277,7 @@ def sse_test(query: str) -> dict:
 
             print(f"  ✅ 连接成功，Content-Type: {resp.headers.get('content-type', 'N/A')}")
             print(f"{'─' * 60}")
-            print(f"  事件流:")
+            print("  事件流:")
 
             buffer = ""
             for chunk in resp.iter_text():
@@ -305,7 +308,11 @@ def sse_test(query: str) -> dict:
                         # 检查 final_output 事件
                         if event_type == "final_output":
                             final_output = event.get("data", {}).get("output", "")
-                            print(f"  [{elapsed:>6}ms] 🎯 {event_type}: \"{final_output[:60]}...\"" if len(final_output) > 60 else f"  [{elapsed:>6}ms] 🎯 {event_type}: \"{final_output}\"")
+                            print(
+                                f'  [{elapsed:>6}ms] 🎯 {event_type}: "{final_output[:60]}..."'
+                                if len(final_output) > 60
+                                else f'  [{elapsed:>6}ms] 🎯 {event_type}: "{final_output}"'
+                            )
                         elif event_type == "heartbeat":
                             hb_ms = event.get("data", {}).get("elapsed_ms", 0)
                             print(f"  [{elapsed:>6}ms] 💓 {event_type} (elapsed={hb_ms}ms)")
@@ -325,26 +332,26 @@ def sse_test(query: str) -> dict:
 
         # 统计摘要
         print(f"{'─' * 60}")
-        print(f"  📊 事件统计:")
+        print("  📊 事件统计:")
         for etype, count in sorted(event_counts.items()):
             print(f"     {etype}: {count}")
         print(f"\n  总耗时: {total_ms}ms")
         print(f"  总事件数: {len(events_received)}")
 
         if final_output:
-            print(f"\n  ✅ 收到 final_output 事件:")
-            print(f"     \"{final_output}\"")
+            print("\n  ✅ 收到 final_output 事件:")
+            print(f'     "{final_output}"')
             return {"success": True, "final_output": final_output, "total_ms": total_ms}
         else:
-            print(f"\n  ⚠️  未收到 final_output 事件")
-            print(f"     如果是快速路径查询，这可能表示后端未正确发送 final_output")
+            print("\n  ⚠️  未收到 final_output 事件")
+            print("     如果是快速路径查询，这可能表示后端未正确发送 final_output")
             return {"success": False, "error": "no_final_output", "total_ms": total_ms}
 
     except httpx.TimeoutException:
         print(f"\n  ❌ SSE 流超时 ({INVOKE_TIMEOUT}s)")
         return {"success": False, "error": "timeout"}
     except httpx.ConnectError:
-        print(f"\n  ❌ 无法连接到 Agent (localhost:8000)")
+        print("\n  ❌ 无法连接到 Agent (localhost:8000)")
         return {"success": False, "error": "connect_error"}
     except Exception as e:
         print(f"\n  ❌ 错误: {e}")
@@ -352,8 +359,9 @@ def sse_test(query: str) -> dict:
 
 
 # =============================================================================
-# Trace File Analysis
+# Trace 文件分析
 # =============================================================================
+
 
 def find_latest_trace() -> Path | None:
     """查找最新的 trace 文件。"""
@@ -406,8 +414,9 @@ def print_trace_analysis():
 
 
 # =============================================================================
-# Main
+# 主程序
 # =============================================================================
+
 
 def main():
     global AGENT_BASE, CPP_BACKEND_BASE
@@ -430,7 +439,9 @@ Examples:
     parser.add_argument("--sse", action="store_true", help="测试 SSE 流端点（验证 final_output 事件）")
     parser.add_argument("--skip-preflight", action="store_true", help="跳过预检直接发请求")
     parser.add_argument("--agent-url", default=AGENT_BASE, help=f"Agent URL (default: {AGENT_BASE})")
-    parser.add_argument("--backend-url", default=CPP_BACKEND_BASE, help=f"C++ Backend URL (default: {CPP_BACKEND_BASE})")
+    parser.add_argument(
+        "--backend-url", default=CPP_BACKEND_BASE, help=f"C++ Backend URL (default: {CPP_BACKEND_BASE})"
+    )
 
     args = parser.parse_args()
 

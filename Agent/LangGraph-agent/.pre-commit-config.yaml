@@ -1,0 +1,37 @@
+# Pre-commit hooks for fiber-maintenance-agent
+# 
+# Primary goal: regression gate on prompt/skill/threshold changes
+# See: docs/plans/2026-08-06-improvement-checklist-v2.md §P0-A
+
+repos:
+  # ── Regression Gate ──────────────────────────────────────────────
+  # Detects changes to prompts/, skills/, config/thresholds and
+  # triggers the full unit test suite (zero LLM, <30s).
+  - repo: local
+    hooks:
+      - id: regression-gate
+        name: regression-gate (prompt/skill/threshold changes)
+        entry: .venv/Scripts/python.exe scripts/regression_gate.py
+        language: python
+        pass_filenames: false
+        always_run: true
+        description: >
+          Runs unit tests when prompts/, skills/, or config/thresholds
+          are modified. Skipps silently when no relevant files changed.
+
+  # ── Code Quality: Ruff lint ──────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: \.py$
+        exclude: ^(tests/|scripts/)
+
+  # ── Code Quality: Ruff format ────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff-format
+        files: \.py$
+        exclude: ^(tests/|scripts/)

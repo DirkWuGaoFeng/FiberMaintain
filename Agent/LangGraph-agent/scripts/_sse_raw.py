@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Dump raw SSE response to understand format."""
-import httpx
-import time
-import sys
+"""转储原始 SSE 响应以了解其格式。"""
 
-sys.stdout.reconfigure(encoding='utf-8')
+import sys
+import time
+
+import httpx
+
+sys.stdout.reconfigure(encoding="utf-8")
 
 AGENT = "http://localhost:8000"
 QUERY = "查询光纤 3 的跨段衰耗"
@@ -31,12 +33,12 @@ try:
         print(f"HTTP {resp.status_code}")
         print(f"Headers: {dict(resp.headers)}")
         print("-" * 60)
-        
+
         count = 0
         for chunk in resp.iter_text():
             elapsed = round((time.time() - start) * 1000)
-            # Print first 500 chars of each chunk
-            preview = chunk[:500].replace('\n', '\\n')
+            # 打印每个数据块的前 500 个字符
+            preview = chunk[:500].replace("\n", "\\n")
             print(f"[{elapsed}ms] CHUNK ({len(chunk)} chars): {preview}")
             count += 1
             if count > 20:

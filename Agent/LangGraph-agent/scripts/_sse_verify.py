@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Quick SSE stream verification script."""
-import httpx
+"""快速 SSE 流验证脚本。"""
+
 import json
-import time
 import sys
+import time
 from collections import Counter
 
-sys.stdout.reconfigure(encoding='utf-8')
+import httpx
+
+sys.stdout.reconfigure(encoding="utf-8")
 
 AGENT = "http://localhost:8000"
 QUERY = "查询光纤 3 的跨段衰耗"

@@ -115,22 +115,24 @@ echo   √ 前端依赖安装完成
 echo.
 echo [8/8] 检测端口占用...
 
-:: --- 检测后端端口 8000 ---
+:: --- 检测后端端口（从 .env 读取 AGENT_PORT，默认 8200）---
+set "AGENT_PORT=8200"
+for /f "tokens=2 delims==" %%V in ('findstr /R /C:"^AGENT_PORT=" "%~dp0.env" 2^>nul') do set "AGENT_PORT=%%V"
 set "PORT_PID="
-for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R ":8000.*LISTENING"') do set "PORT_PID=%%P"
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R ":%AGENT_PORT%.*LISTENING"') do set "PORT_PID=%%P"
 if not defined PORT_PID (
-    echo   √ 端口 8000 空闲
-    goto :port_8000_ok
+    echo   √ 端口 %AGENT_PORT% 空闲
+    goto :port_8200_ok
 )
-echo   [!] 端口 8000 被占用 (PID: %PORT_PID%)，正在终止...
+echo   [!] 端口 %AGENT_PORT% 被占用 (PID: %PORT_PID%)，正在终止...
 taskkill /PID %PORT_PID% /F >nul 2>&1
 if errorlevel 1 (
     echo   [WARN] 自动终止失败，请手动执行: taskkill /PID %PORT_PID% /F
     pause
     exit /b 1
 )
-echo   √ 已终止进程 PID %PORT_PID%，端口 8000 已释放
-:port_8000_ok
+echo   √ 已终止进程 PID %PORT_PID%，端口 %AGENT_PORT% 已释放
+:port_8200_ok
 
 :: --- 检测前端端口 5173 ---
 if not "%FRONTEND_AVAILABLE%"=="1" goto :port_5173_ok
@@ -153,13 +155,13 @@ echo   √ 已终止进程 PID %PORT_PID%，端口 5173 已释放
 echo.
 echo ============================================
 echo   启动 Agent 服务...
-echo   Agent 后端: http://localhost:8000
+echo   Agent 后端: http://localhost:%AGENT_PORT%
 if "%FRONTEND_AVAILABLE%"=="1" echo   前端界面:   http://127.0.0.1:5173
-echo   健康检查: http://localhost:8000/health
-echo   指标: http://localhost:8000/metrics
+echo   健康检查: http://localhost:%AGENT_PORT%/health
+echo   指标: http://localhost:%AGENT_PORT%/metrics
 echo ============================================
 echo.
-echo 按 Ctrl+C 停止后端服务
+echo 按 Ctrl+C 停止服务（可能需要等待几秒）
 echo.
 
 :: 启动前端开发服务器 (新窗口)
@@ -170,6 +172,12 @@ echo.
 :skip_frontend_start
 
 :: 启动后端 (当前窗口，阻塞)
-python -m uvicorn src.server:app --host 0.0.0.0 --port 8000 --reload
+:: 注意：不使用 --reload，因为 Windows 下 --reload 的子进程会吞掉 Ctrl+C 信号
+:: 端口从 .env 的 AGENT_PORT 读取（8200 常被 Windows Hyper-V/WSL 动态保留区占用）
+set "AGENT_PORT=8200"
+for /f "tokens=2 delims==" %%V in ('findstr /R /C:"^AGENT_PORT=" "%~dp0.env" 2^>nul') do set "AGENT_PORT=%%V"
+python -m uvicorn src.server:app --host 0.0.0.0 --port %AGENT_PORT%
 
+echo.
+echo Agent 服务已停止。
 pause
