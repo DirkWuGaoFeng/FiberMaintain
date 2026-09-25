@@ -1,12 +1,12 @@
 """
-Event Router [v7.1].
+事件路由器 [v7.1]。
 
-Routes events from the listener queue to appropriate handlers:
-- CRITICAL alarm → trigger proactive diagnosis
-- GREEN→RED color change → trigger proactive diagnosis
-- stats_update → update LocalCache
+将监听器队列中的事件路由到相应的处理器：
+- CRITICAL 告警 → 触发主动诊断
+- GREEN→RED 颜色变化 → 触发主动诊断
+- stats_update → 更新 LocalCache
 
-Runs as a background asyncio task consuming from EventListener.queue.
+作为后台 asyncio 任务运行，从 EventListener.queue 消费事件。
 """
 
 from __future__ import annotations
@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 class EventRouter:
     """
-    Event routing engine.
+    事件路由引擎。
 
-    Consumes events from the listener queue and dispatches to handlers.
+    从监听器队列消费事件并分发给相应的处理器。
     """
 
     def __init__(self):
@@ -30,7 +30,7 @@ class EventRouter:
         self._task: Optional[asyncio.Task] = None
 
     async def start(self, queue: asyncio.Queue) -> None:
-        """Start the event router background task."""
+        """启动事件路由器后台任务。"""
         if self._running:
             return
         self._running = True
@@ -38,7 +38,7 @@ class EventRouter:
         logger.info("[EventRouter] Started")
 
     async def stop(self) -> None:
-        """Stop the event router."""
+        """停止事件路由器。"""
         self._running = False
         if self._task:
             self._task.cancel()
@@ -49,7 +49,7 @@ class EventRouter:
         logger.info("[EventRouter] Stopped")
 
     async def _route_loop(self, queue: asyncio.Queue) -> None:
-        """Main routing loop."""
+        """主路由循环。"""
         while self._running:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=1.0)
@@ -62,7 +62,7 @@ class EventRouter:
                 logger.error(f"[EventRouter] Dispatch error: {e}")
 
     async def _dispatch(self, event: dict) -> None:
-        """Route a single event to the appropriate handler."""
+        """将单个事件路由到相应的处理器。"""
         event_type = event.get("type", event.get("event_type", ""))
 
         if event_type == "alarm":
@@ -75,7 +75,7 @@ class EventRouter:
             logger.debug(f"[EventRouter] Unhandled event type: {event_type}")
 
     async def _handle_alarm(self, event: dict) -> None:
-        """Handle alarm event: CRITICAL triggers proactive diagnosis."""
+        """处理告警事件：CRITICAL 触发主动诊断。"""
         level = event.get("alarm_level", event.get("level", ""))
         fiber_id = event.get("fiber_id")
 
@@ -86,7 +86,7 @@ class EventRouter:
             logger.info(f"[EventRouter] Alarm ({level}) on fiber {fiber_id}, logged only")
 
     async def _handle_color_change(self, event: dict) -> None:
-        """Handle fiber color change: GREEN→RED triggers proactive diagnosis."""
+        """处理光纤颜色变化：GREEN→RED 触发主动诊断。"""
         old_color = event.get("old_color", "")
         new_color = event.get("new_color", event.get("color", ""))
         fiber_id = event.get("fiber_id")
@@ -98,9 +98,10 @@ class EventRouter:
             logger.info(f"[EventRouter] Fiber {fiber_id} color change: {old_color}→{new_color}")
 
     async def _handle_stats_update(self, event: dict) -> None:
-        """Handle stats update: write to LocalCache."""
+        """处理统计更新事件：写入 LocalCache。"""
         try:
             from ..cache.local_cache import get_local_cache
+
             cache = get_local_cache()
             if cache:
                 await cache.set("stats:realtime", event.get("data", event), ttl=300)
@@ -109,9 +110,10 @@ class EventRouter:
             logger.debug(f"[EventRouter] Cache update failed: {e}")
 
     async def _trigger_proactive(self, event: dict, reason: str) -> None:
-        """Trigger proactive diagnosis sub-graph."""
+        """触发主动诊断子图。"""
         try:
             from ..graph.subgraphs.proactive import run_proactive_diagnosis
+
             asyncio.create_task(run_proactive_diagnosis(event, reason=reason))
         except ImportError:
             logger.warning("[EventRouter] Proactive module not available")
@@ -120,14 +122,14 @@ class EventRouter:
 
 
 # =============================================================================
-# Singleton
+# 单例
 # =============================================================================
 
 _router_instance: Optional[EventRouter] = None
 
 
 def get_event_router() -> EventRouter:
-    """Get or create the event router singleton."""
+    """获取或创建事件路由器单例。"""
     global _router_instance
     if _router_instance is None:
         _router_instance = EventRouter()

@@ -6,6 +6,7 @@ AgentResult: 每个 Agent 的统一返回格式
 LoopContext: Collection ↔ Analysis 循环上下文
 V8State: v8 图的顶层状态
 """
+
 from __future__ import annotations
 
 from enum import Enum
@@ -89,9 +90,16 @@ class V8State(BaseModel):
     trace_id: str = ""
     session_id: str = ""
 
+    # 用户标识（可选，缺失时跳过偏好注入，向后兼容）
+    user_id: str = ""
+
     # Lead Router 输出
     execution_plan: Optional[ExecutionPlan] = None
     normalized_params: dict[str, Any] = Field(default_factory=dict)
+
+    # 上下文压缩 [P0-A]
+    conversation_summary: dict[str, Any] = Field(default_factory=dict)
+    messages: list[Any] = Field(default_factory=list)
 
     # 循环上下文
     loop_context: LoopContext = Field(default_factory=LoopContext)

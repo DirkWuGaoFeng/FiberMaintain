@@ -1,9 +1,10 @@
 """
-Fiber tools: history performance query [v7.1].
+光纤工具集 —— 历史性能查询 [v7.1]。
 
-Extends performance_tools with time-range history queries.
+【功能说明】
+扩展 performance_tools，支持时间范围的历史性能查询。
 
-Maps to C++ API Gateway endpoints:
+【对应后端 API】
   - GET /api/v1/fibers/{fiber_id}/performance/history?start_time=X&end_time=Y
 """
 
@@ -29,9 +30,9 @@ async def fiber_history_performance(
     start_time: Optional[str] = None,
     end_time: Optional[str] = None,
 ) -> str:
-    """Query fiber historical performance data over a time range.
-    Returns: JSON with performance points (timestamp, oop, iop, spanloss)."""
-    # Layer 3 assertion
+    """查询光纤历史性能数据（指定时间范围）。
+    返回：JSON，含性能点数组（timestamp, oop, iop, spanloss）。"""
+    # Layer 3 断言：确保 fiber_id 是正整数
     assert_positive_int(fiber_id, "fiber_id")
 
     params = {}

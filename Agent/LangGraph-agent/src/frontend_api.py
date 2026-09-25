@@ -1,13 +1,13 @@
 """
-Frontend API Router — v7.1 前端管理界面专属 API.
+前端 API 路由 — v7.1 前端管理界面专属 API.
 
-Endpoints:
-  Knowledge:  GET/POST/DELETE /api/v1/knowledge/*
-  Threads:    GET/DELETE      /api/v1/threads/*
-  Graph:      GET             /api/v1/graph/structure
-  Memory:     GET/POST        /api/v1/memory/*
-  Confirm:    GET/POST        /api/v1/confirm/*   (写操作 HITL 门禁)
-  Metrics:    GET             /api/v1/metrics/summary
+接口列表：
+  知识库:  GET/POST/DELETE /api/v1/knowledge/*
+  会话线程: GET/DELETE      /api/v1/threads/*
+  图结构:  GET             /api/v1/graph/structure
+  记忆:    GET/POST        /api/v1/memory/*
+  确认:    GET/POST        /api/v1/confirm/*   (写操作 HITL 门禁)
+  指标:    GET             /api/v1/metrics/summary
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .config import (
     CHECKPOINT_DB,
@@ -40,8 +40,9 @@ MEMORY_DB = str(DATA_DIR / "memory.db")
 
 
 # =============================================================================
-# Knowledge Base APIs
+# 知识库 API
 # =============================================================================
+
 
 @router.get("/api/v1/knowledge/docs")
 async def list_knowledge_docs():
@@ -59,13 +60,15 @@ async def list_knowledge_docs():
                     content_len = stat.st_size
                     # 估算分块数: chunk_size=500, overlap=50
                     estimated_chunks = max(1, content_len // 450)
-                    documents.append({
-                        "name": filepath.name,
-                        "category": RAGEngine._infer_category(filepath.name),
-                        "chunkCount": estimated_chunks,
-                        "sizeBytes": content_len,
-                        "updatedAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    })
+                    documents.append(
+                        {
+                            "name": filepath.name,
+                            "category": RAGEngine._infer_category(filepath.name),
+                            "chunkCount": estimated_chunks,
+                            "sizeBytes": content_len,
+                            "updatedAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                        }
+                    )
                 except OSError as e:
                     logger.warning(f"[KnowledgeAPI] Failed to stat {filepath.name}: {e}")
 
@@ -99,6 +102,7 @@ async def upload_knowledge_doc(file: UploadFile = File(...)):
 
     # 估算分块数
     from .rag.engine import RAGEngine
+
     estimated_chunks = max(1, len(content) // 450)
     category = RAGEngine._infer_category(safe_name)
 
@@ -142,6 +146,7 @@ async def reindex_knowledge():
 
         # 重置 RAG 引擎单例，强制下次重新初始化
         from .rag import engine as engine_mod
+
         engine_mod._engine_instance = None
 
         logger.info(f"[KnowledgeAPI] Reindex complete: {chunks} chunks")
@@ -200,6 +205,7 @@ async def knowledge_stats():
 
     # 引擎可用性
     from .rag.engine import get_rag_engine
+
     engine = get_rag_engine()
     engine_available = engine.is_available if engine else False
 
@@ -213,8 +219,9 @@ async def knowledge_stats():
 
 
 # =============================================================================
-# Thread Management APIs
+# 会话线程管理 API
 # =============================================================================
+
 
 @router.get("/api/v1/threads")
 async def list_threads():
@@ -232,12 +239,14 @@ async def list_threads():
                 LIMIT 50
             """)
             for row in cursor:
-                threads.append({
-                    "threadId": row["thread_id"],
-                    "lastActiveAt": datetime.now().isoformat(),
-                    "messageCount": None,
-                    "preview": None,
-                })
+                threads.append(
+                    {
+                        "threadId": row["thread_id"],
+                        "lastActiveAt": datetime.now().isoformat(),
+                        "messageCount": None,
+                        "preview": None,
+                    }
+                )
             conn.close()
     except Exception as e:
         logger.warning(f"[ThreadsAPI] Failed to read checkpoint DB: {e}")
@@ -310,7 +319,7 @@ async def interrupt_thread(thread_id: str):
 
 
 # =============================================================================
-# Graph Structure API
+# 图结构 API
 # =============================================================================
 
 # 静态图结构定义（与 main_graph.py 完全一致）
@@ -324,7 +333,9 @@ _GRAPH_STRUCTURE = {
         {"id": "clarification", "label": "参数澄清", "type": "executor", "description": "向用户请求补充参数"},
         {"id": "intent_router", "label": "意图路由", "type": "router", "description": "按意图分发子图"},
         {
-            "id": "data_collector", "label": "数据采集", "type": "subgraph",
+            "id": "data_collector",
+            "label": "数据采集",
+            "type": "subgraph",
             "description": "ReAct 工具调用子图 (15 工具)",
         },
         {"id": "batch_dispatcher", "label": "批量调度", "type": "executor", "description": "批量查询分片调度"},
@@ -358,8 +369,11 @@ _GRAPH_STRUCTURE = {
         {"source": "data_collector", "target": "rule_judgment", "conditional": False},
         {"source": "rule_judgment", "target": "analysis_expert", "conditional": False},
         {
-            "source": "analysis_expert", "target": "data_collector", "label": "need_more_data",
-            "conditional": True, "isLoop": True,
+            "source": "analysis_expert",
+            "target": "data_collector",
+            "label": "need_more_data",
+            "conditional": True,
+            "isLoop": True,
         },
         {"source": "analysis_expert", "target": "report_generator", "label": "generate_report", "conditional": True},
         {"source": "analysis_expert", "target": "narrator", "label": "direct_narrate", "conditional": True},
@@ -371,8 +385,11 @@ _GRAPH_STRUCTURE = {
         {"source": "report_generator", "target": "report_evaluator", "conditional": False},
         {"source": "report_evaluator", "target": "result_aggregator", "label": "pass", "conditional": True},
         {
-            "source": "report_evaluator", "target": "report_generator", "label": "refine",
-            "conditional": True, "isLoop": True,
+            "source": "report_evaluator",
+            "target": "report_generator",
+            "label": "refine",
+            "conditional": True,
+            "isLoop": True,
         },
         {"source": "batch_dispatcher", "target": "result_aggregator", "conditional": False},
         {"source": "knowledge_qa", "target": "result_aggregator", "conditional": False},
@@ -389,8 +406,9 @@ async def get_graph_structure():
 
 
 # =============================================================================
-# Memory APIs (SQLite 快照存储)
+# 记忆 API（SQLite 快照存储）
 # =============================================================================
+
 
 def _get_memory_conn() -> sqlite3.Connection:
     """获取记忆 DB 连接（自动建表）."""
@@ -467,15 +485,77 @@ class CleanupRequest(BaseModel):
     max_age_days: int = 90
 
 
+class ConsolidateRequest(BaseModel):
+    dry_run: bool = False
+    stale_days: int = 180
+    max_per_fiber: int = 20
+
+
+class ExtractMemoryRequest(BaseModel):
+    """会话后记忆提取请求（书籍 Ch3 after-conversation background job）."""
+
+    user_id: str = ""
+    conversation: str = Field(..., description="会话对话文本")
+    max_candidates: int = 5
+
+
+@router.post("/api/v1/memory/consolidate")
+async def consolidate_memory(req: ConsolidateRequest):
+    """触发经验整合（书中 Ch3 保存≠学习：离线整理阶段）.
+
+    确定性 SQL 操作（零 LLM），不阻塞在线推理。
+    dry_run=true 时仅预览，不写库。
+    """
+    try:
+        from .memory.consolidator import get_consolidator
+
+        report = get_consolidator().consolidate(
+            stale_days=req.stale_days,
+            max_per_fiber=req.max_per_fiber,
+            dry_run=req.dry_run,
+        )
+        return {
+            "dry_run": req.dry_run,
+            "report": report.to_dict(),
+        }
+    except Exception as e:
+        logger.error(f"[MemoryAPI] Consolidate failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/v1/memory/extract")
+async def extract_memory(req: ExtractMemoryRequest):
+    """触发会话后记忆提取（书籍 Ch3：extract → verify → dedupe → store）.
+
+    后台作业语义：从对话中提取用户个性化记忆，经质量门禁后写入
+    user_memory（偏好白名单 + 事件日志）。失败不抛错（降级为空统计）。
+    """
+    if not req.user_id:
+        raise HTTPException(status_code=400, detail="user_id 必填")
+    if not (req.conversation or "").strip():
+        raise HTTPException(status_code=400, detail="conversation 不能为空")
+
+    try:
+        from .memory.extractor import get_memory_extractor
+
+        result = await get_memory_extractor().extract_and_store(
+            conversation=req.conversation,
+            user_id=req.user_id,
+            max_candidates=req.max_candidates,
+        )
+        return {"user_id": req.user_id, "result": result}
+    except Exception as e:
+        logger.error(f"[MemoryAPI] Extract failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/api/v1/memory/cleanup")
 async def cleanup_memory(req: CleanupRequest):
     """清理过期记忆快照."""
     try:
         conn = _get_memory_conn()
         cutoff = (datetime.now() - timedelta(days=req.max_age_days)).isoformat()
-        cursor = conn.execute(
-            "DELETE FROM fiber_snapshots WHERE created_at < ?", (cutoff,)
-        )
+        cursor = conn.execute("DELETE FROM fiber_snapshots WHERE created_at < ?", (cutoff,))
         deleted = cursor.rowcount
         conn.commit()
         conn.close()
@@ -487,8 +567,9 @@ async def cleanup_memory(req: CleanupRequest):
 
 
 # =============================================================================
-# Confirm APIs (写操作 HITL 确认门禁 [改进清单 P1-B])
+# 确认 API（写操作 HITL 确认门禁 [改进清单 P1-B]）
 # =============================================================================
+
 
 @router.get("/api/v1/confirm/pending")
 async def confirm_pending():
@@ -516,9 +597,7 @@ async def confirm_execute(token: str):
     params = entry["params"]
     try:
         if operation == "pull_call_create":
-            result = await fiber_http_client.post(
-                "/api/v1/pullcall/create", json=params, timeout=5.0
-            )
+            result = await fiber_http_client.post("/api/v1/pullcall/create", json=params, timeout=5.0)
         elif operation == "pull_call_cancel":
             req_params = {}
             if params.get("reason"):
@@ -539,8 +618,9 @@ async def confirm_execute(token: str):
 
 
 # =============================================================================
-# Metrics Summary API
+# 指标汇总 API
 # =============================================================================
+
 
 @router.get("/api/v1/metrics/summary")
 async def metrics_summary():
@@ -620,6 +700,7 @@ async def metrics_summary():
     # 附加降级等级
     try:
         from .resilience.degradation import get_degradation_manager
+
         dm = get_degradation_manager()
         if dm:
             status = dm.get_status()
@@ -628,4 +709,3 @@ async def metrics_summary():
         pass
 
     return summary
-

@@ -1,10 +1,11 @@
 """
-Board tools: board-specific fiber queries [v7.1].
+单盘工具集 —— 单盘关联光纤查询 [v7.1]。
 
-Extends topology_tools.board_query with fiber association queries.
+【功能说明】
+扩展 topology_tools.board_query，支持查询单盘关联的所有光纤。
 
-Maps to C++ API Gateway endpoints:
-  - GET /api/v1/boards/{board_id}/fibers
+【对应后端 API】
+  - GET /api/v1/boards/{board_id}/fibers — 查询单盘关联光纤
 """
 
 from __future__ import annotations
@@ -21,9 +22,9 @@ class BoardFibersInput(BaseModel):
 
 @tool(args_schema=BoardFibersInput)
 async def board_fibers_query(board_id: int) -> str:
-    """Query all fibers connected to a specific board.
-    Returns: JSON with fibers array (fiber_id, port_id, color, remote_ne)."""
-    # Layer 3 assertion
+    """查询指定单盘关联的所有光纤。
+    返回：JSON，含光纤数组（fiber_id, port_id, color, remote_ne）。"""
+    # Layer 3 断言：确保 board_id 是正整数
     assert_positive_int(board_id, "board_id")
 
     try:

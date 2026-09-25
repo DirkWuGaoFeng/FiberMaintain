@@ -12,15 +12,15 @@ Analysis Agent — 分析判断层.
 - 规则优先：能用规则判断的不调 LLM
 - 阈值从 ThresholdEngine 获取
 """
+
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import Any
 
 from ...governance.threshold_engine import get_threshold_engine
-from ..contracts import AnalysisVerdict, CollectionPayload, Finding, FiberMetrics
+from ..contracts import AnalysisVerdict, CollectionPayload, Finding
 from ..models import AgentLayer, AgentResult, ExecutionPlan
 from .base import BaseAgent
 
@@ -76,9 +76,7 @@ class AnalysisAgent(BaseAgent):
                 collection_mode="react",
             )
 
-    def _rule_judgment_typed(
-        self, payload: CollectionPayload, plan: ExecutionPlan
-    ) -> AnalysisVerdict:
+    def _rule_judgment_typed(self, payload: CollectionPayload, plan: ExecutionPlan) -> AnalysisVerdict:
         """程序化规则判断 — 优先使用结构化数据."""
         engine = get_threshold_engine()
         findings: list[Finding] = []
@@ -89,13 +87,15 @@ class AnalysisAgent(BaseAgent):
             for m in payload.metrics:
                 if m.spanloss_db is not None:
                     jr = engine.judge_spanloss(m.spanloss_db)
-                    findings.append(Finding(
-                        metric_name="spanloss",
-                        value=m.spanloss_db,
-                        unit="dB",
-                        level=jr.status,
-                        description=f"跨段损耗 {m.spanloss_db}dB → {jr.status}",
-                    ))
+                    findings.append(
+                        Finding(
+                            metric_name="spanloss",
+                            value=m.spanloss_db,
+                            unit="dB",
+                            level=jr.status,
+                            description=f"跨段损耗 {m.spanloss_db}dB → {jr.status}",
+                        )
+                    )
                     if jr.status == "CRITICAL":
                         status = "CRITICAL"
                     elif jr.status == "WARNING" and status != "CRITICAL":
@@ -104,13 +104,15 @@ class AnalysisAgent(BaseAgent):
                 if m.oop_dbm is not None:
                     level = engine.judge_oop(m.oop_dbm)
                     if level != "NORMAL":
-                        findings.append(Finding(
-                            metric_name="oop",
-                            value=m.oop_dbm,
-                            unit="dBm",
-                            level=level,
-                            description=f"出光功率 {m.oop_dbm}dBm → {level}",
-                        ))
+                        findings.append(
+                            Finding(
+                                metric_name="oop",
+                                value=m.oop_dbm,
+                                unit="dBm",
+                                level=level,
+                                description=f"出光功率 {m.oop_dbm}dBm → {level}",
+                            )
+                        )
                         if level == "CRITICAL":
                             status = "CRITICAL"
                         elif status != "CRITICAL":
@@ -119,13 +121,15 @@ class AnalysisAgent(BaseAgent):
                 if m.iop_dbm is not None:
                     level = engine.judge_iop(m.iop_dbm)
                     if level != "NORMAL":
-                        findings.append(Finding(
-                            metric_name="iop",
-                            value=m.iop_dbm,
-                            unit="dBm",
-                            level=level,
-                            description=f"入光功率 {m.iop_dbm}dBm → {level}",
-                        ))
+                        findings.append(
+                            Finding(
+                                metric_name="iop",
+                                value=m.iop_dbm,
+                                unit="dBm",
+                                level=level,
+                                description=f"入光功率 {m.iop_dbm}dBm → {level}",
+                            )
+                        )
                         if level == "CRITICAL":
                             status = "CRITICAL"
                         elif status != "CRITICAL":
@@ -154,10 +158,15 @@ class AnalysisAgent(BaseAgent):
         for val_str in spanloss_matches:
             val = float(val_str)
             jr = engine.judge_spanloss(val)
-            findings.append(Finding(
-                metric_name="spanloss", value=val, unit="dB",
-                level=jr.status, description=f"跨段损耗 {val}dB → {jr.status}",
-            ))
+            findings.append(
+                Finding(
+                    metric_name="spanloss",
+                    value=val,
+                    unit="dB",
+                    level=jr.status,
+                    description=f"跨段损耗 {val}dB → {jr.status}",
+                )
+            )
             if jr.status == "CRITICAL":
                 status = "CRITICAL"
             elif jr.status == "WARNING" and status != "CRITICAL":
@@ -172,10 +181,15 @@ class AnalysisAgent(BaseAgent):
             val = float(val_str)
             level = engine.judge_oop(val)
             if level != "NORMAL":
-                findings.append(Finding(
-                    metric_name="oop", value=val, unit="dBm",
-                    level=level, description=f"出光功率 {val}dBm → {level}",
-                ))
+                findings.append(
+                    Finding(
+                        metric_name="oop",
+                        value=val,
+                        unit="dBm",
+                        level=level,
+                        description=f"出光功率 {val}dBm → {level}",
+                    )
+                )
                 if level == "CRITICAL":
                     status = "CRITICAL"
                 elif status != "CRITICAL":
@@ -187,29 +201,103 @@ class AnalysisAgent(BaseAgent):
             analysis_mode="rule",
         )
 
-    async def _llm_analysis(
-        self, payload: CollectionPayload, plan: ExecutionPlan, context: dict
-    ) -> AgentResult:
-        """LLM 深度分析（规则无法覆盖时）."""
+    async def _llm_analysis(self, payload: CollectionPayload, plan: ExecutionPlan, context: dict) -> AgentResult:
+        """LLM 深度分析（规则无法覆盖时）.
+
+        【改进 P0-B/C】
+        - 注入 RAG 知识库上下文（不再只依赖经验历史）
+        - 使用语义检索 + 精确匹配查找相关经验
+        - 整合多源上下文：经验 + 知识库 + 对话摘要
+        - 确定性写入经验（WARNING/CRITICAL 级别）
+
+        注意：plan 参数仅为保持 API 兼容而保留；光纤信息提取现在
+        改为使用 context.normalized_params。
+        """
         from langchain_core.messages import HumanMessage, SystemMessage
 
         from ...llm.provider import get_analysis_llm
 
         try:
             llm = get_analysis_llm()
+
+            # ---- [P0-B] 经验记忆检索 ----
+            experience_text = "无"
+            fiber_key = self._extract_fiber_key(payload, context)
+            if fiber_key:
+                try:
+                    from ...memory.experience_store import get_experience_store
+                    from ...memory.memory_retriever import get_memory_retriever
+
+                    store = get_experience_store()
+                    retriever = get_memory_retriever()
+
+                    # 精确匹配 + 语义检索混合
+                    exact_experiences = store.query(fiber_key, days=90, limit=3)
+                    semantic_experiences = await retriever.query_hybrid(
+                        query_text=context.get("user_input", ""),
+                        fiber_keys=[fiber_key],
+                        top_k=2,
+                    )
+                    all_experiences = exact_experiences + [
+                        {
+                            "severity": e.get("severity", ""),
+                            "conclusion": e.get("conclusion", ""),
+                            "source": "semantic",
+                        }
+                        for e in semantic_experiences
+                    ]
+                    if all_experiences:
+                        exp_lines = []
+                        for exp in all_experiences[:5]:
+                            sev = exp.get("severity", "")
+                            conc = exp.get("conclusion", "")
+                            src = exp.get("source", "exact")
+                            exp_lines.append(f"  - [{src}] {sev}: {conc[:100]}")
+                        experience_text = "\n".join(exp_lines)
+                except Exception as e:
+                    logger.warning(f"[AnalysisAgent] Experience retrieval failed: {e}")
+
+            # ---- [P0-C] RAG 知识库检索 ----
+            rag_context_text = "无"
+            try:
+                from ...rag.engine import get_rag_engine
+
+                rag_engine = get_rag_engine()
+                rag_results = await rag_engine.retrieve(context.get("user_input", "光纤维护"), top_k=3)
+                if rag_results:
+                    rag_lines = []
+                    for r in rag_results:
+                        source = r.get("metadata", {}).get("source", "unknown")
+                        content_preview = r.get("content", "")[:200]
+                        score = r.get("score", 0.0)
+                        rag_lines.append(f"  - [{source}] (相关度={score:.2f}) {content_preview}")
+                    rag_context_text = "\n".join(rag_lines)
+            except Exception as e:
+                logger.warning(f"[AnalysisAgent] RAG retrieval failed: {e}")
+
+            # ---- 构建多源上下文 prompt ----
             system = (
                 "你是光纤维护专家。分析数据并给出结论。\n"
+                "你可以参考历史经验和知识库内容，但必须基于当前数据做出判断。\n"
                 '输出 JSON：{"status": "NORMAL|WARNING|CRITICAL", '
                 '"findings": [{"metric_name": "", "value": 0, "unit": "", '
                 '"level": "", "description": ""}], "suggestion": "...", '
                 '"needs_more_data": false, "additional_query": null}\n'
                 "如果数据不足以判断，设 needs_more_data=true 并说明需要什么数据。"
             )
-            # 使用结构化数据构建 user message
+            # 使用结构化数据 + 多源上下文构建 user message
             data_desc = payload.model_dump_json(exclude_none=True)
+            conv_summary = context.get("conversation_summary", {})
+            summary_text = ""
+            if conv_summary:
+                summary_text = f"\n\n## 历史对话摘要\n{conv_summary}"
+
             user_msg = (
                 f"## 数据\n{data_desc}\n\n"
                 f"## 用户问题\n{context.get('user_input', '')}"
+                f"{summary_text}\n\n"
+                f"## 该光纤历史经验（确定性检索）\n{experience_text}\n\n"
+                f"## 知识库相关内容（RAG 检索）\n{rag_context_text}"
             )
 
             response = await llm.ainvoke(
@@ -221,9 +309,13 @@ class AnalysisAgent(BaseAgent):
 
             # 解析为 typed verdict
             content = response.content if hasattr(response, "content") else str(response)
-            json_match = re.search(r"\{[\s\S]*\}", content)
+            import re as _re
+
+            json_match = _re.search(r"\{[\s\S]*\}", content)
             if json_match:
-                raw = json.loads(json_match.group())
+                import json as _json
+
+                raw = _json.loads(json_match.group())
                 verdict = AnalysisVerdict(
                     status=raw.get("status", "UNKNOWN"),
                     findings=[Finding(**f) for f in raw.get("findings", []) if isinstance(f, dict)],
@@ -239,6 +331,22 @@ class AnalysisAgent(BaseAgent):
                     findings=[Finding(description=content[:200])],
                     analysis_mode="llm",
                 )
+
+            # ---- [P0-B] 确定性经验写入：仅 WARNING/CRITICAL ----
+            if verdict.status in ("WARNING", "CRITICAL") and fiber_key:
+                try:
+                    from ...memory.experience_store import get_experience_store
+
+                    store = get_experience_store()
+                    store.save(
+                        fiber_key=fiber_key,
+                        severity=verdict.status,
+                        conclusion=verdict.suggestion or f"{verdict.status} detected",
+                        evidence=[f.description for f in verdict.findings],
+                    )
+                    logger.info(f"[AnalysisAgent] Experience saved: {verdict.status} for {fiber_key}")
+                except Exception as e:
+                    logger.warning(f"[AnalysisAgent] Experience save failed: {e}")
 
             return AgentResult(
                 layer=self.layer,
@@ -263,3 +371,18 @@ class AnalysisAgent(BaseAgent):
                 error=f"LLM 分析失败: {e}",
                 data={"verdict": fallback.model_dump(), "analysis_mode": "degraded"},
             )
+
+    @staticmethod
+    def _extract_fiber_key(payload: CollectionPayload, context: dict) -> str:
+        """从 payload 和 context 中提取 fiber_key."""
+        fiber_ids = []
+        if payload.metrics:
+            for m in payload.metrics:
+                if m.fiber_id:
+                    fiber_ids.append(m.fiber_id)
+        if not fiber_ids:
+            params = context.get("normalized_params", {})
+            fiber_ids = params.get("fiber_ids", [])
+        if not fiber_ids:
+            return ""
+        return ",".join(str(f) for f in fiber_ids[:5])

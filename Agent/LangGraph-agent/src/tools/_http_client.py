@@ -1,8 +1,24 @@
 """
-Shared async HTTP client with circuit breaker, exponential backoff retry, and backpressure control.
+共享异步 HTTP 客户端 —— 带熔断器、指数退避重试、背压控制。
 
-This is the single data access layer for all Tools that call the C++ backend API Gateway.
-Implements P1 (Agent does no computation) and P2 (single data exit point) principles.
+【功能说明】
+这是所有工具调用 C++ 后端 API Gateway 的唯一数据访问层。
+实现 P1（Agent 不做计算）和 P2（单一数据出口）原则。
+
+【核心组件】
+1. CircuitBreaker（熔断器）：三态状态机（CLOSED/OPEN/HALF_OPEN）
+   防止后端故障时大量请求堆积
+2. BackpressureController（背压控制器）：根据错误率动态调整并发和延迟
+3. FiberHttpClient（HTTP 客户端）：封装 GET/POST/DELETE + 重试逻辑
+
+【面试知识点】
+  Q: 什么是熔断器模式？
+  A: 类似电路保险丝。当连续失败次数超过阈值，熔断器“跳闸”（OPEN），
+     后续请求直接拒绝，避免压垂后端。冷却期后进入 HALF_OPEN 状态，
+     允许一个探测请求，成功则恢复（CLOSED），失败则重新跳闸。
+  Q: 什么是背压控制？
+  A: 当错误率上升时，自动降低请求速率（增加请求间隔），
+     类似交通拥堵时红绿灯时间变长。防止后端过载。
 """
 
 from __future__ import annotations
@@ -12,7 +28,7 @@ import logging
 import os
 import time
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional
 
 import httpx
 
@@ -20,31 +36,39 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Exceptions
+# 异常定义
 # =============================================================================
 
+
 class CircuitOpenError(Exception):
-    """Raised when the circuit breaker is open and requests are rejected."""
-    pass
+    """熔断器开启时抛出，表示请求被拒绝。"""
 
 
 class BackendUnavailableError(Exception):
-    """Raised when the backend is completely unavailable after retries."""
-    pass
+    """后端在重试耗尽后完全不可用时抛出。"""
 
 
 # =============================================================================
-# Circuit Breaker
+# 熔断器（Circuit Breaker）
+# 【面试知识点】三态状态机：CLOSED → OPEN → HALF_OPEN → CLOSED
 # =============================================================================
+
 
 class CircuitState(Enum):
-    CLOSED = "closed"        # Normal operation
-    OPEN = "open"            # Tripped, rejecting requests
-    HALF_OPEN = "half_open"  # Testing if backend recovered
+    CLOSED = "closed"  # 正常运行，允许请求通过
+    OPEN = "open"  # 熔断中，拒绝所有请求
+    HALF_OPEN = "half_open"  # 探测中，允许一个请求测试后端是否恢复
 
 
 class CircuitBreaker:
-    """Three-state circuit breaker with cooldown timer."""
+    """三态熔断器，带冷却计时器。
+
+    【状态转换】
+    - CLOSED → OPEN：连续失败次数 ≥ failure_threshold
+    - OPEN → HALF_OPEN：冷却时间到期（cooldown_seconds）
+    - HALF_OPEN → CLOSED：探测请求成功
+    - HALF_OPEN → OPEN：探测请求失败
+    """
 
     def __init__(self, failure_threshold: int = 5, cooldown_seconds: float = 30.0):
         self.state = CircuitState.CLOSED
@@ -55,23 +79,21 @@ class CircuitBreaker:
         self._lock = asyncio.Lock()
 
     async def check(self) -> None:
-        """Check if request is allowed. Raises CircuitOpenError if open."""
+        """检查是否允许请求。熔断器 OPEN 时抛出 CircuitOpenError。"""
         async with self._lock:
             if self.state == CircuitState.CLOSED:
                 return
             if self.state == CircuitState.OPEN:
-                # Check if cooldown has elapsed -> transition to HALF_OPEN
+                # 检查冷却时间是否已到 -> 转入 HALF_OPEN 状态
                 if time.monotonic() - (self._opened_at or 0) >= self.cooldown_seconds:
                     self.state = CircuitState.HALF_OPEN
                     logger.info("[CircuitBreaker] OPEN -> HALF_OPEN (cooldown elapsed)")
-                    return  # Allow one probe request
-                raise CircuitOpenError(
-                    f"Circuit breaker OPEN, cooldown {self.cooldown_seconds}s not elapsed"
-                )
-            # HALF_OPEN: allow the probe request through
+                    return  # 允许一个探测请求
+                raise CircuitOpenError(f"Circuit breaker OPEN, cooldown {self.cooldown_seconds}s not elapsed")
+            # HALF_OPEN：放行探测请求
 
     async def record_success(self) -> None:
-        """Record a successful request."""
+        """记录成功请求。HALF_OPEN 状态下成功则恢复为 CLOSED。"""
         async with self._lock:
             if self.state == CircuitState.HALF_OPEN:
                 self.state = CircuitState.CLOSED
@@ -81,11 +103,11 @@ class CircuitBreaker:
                 self.failure_count = max(0, self.failure_count - 1)
 
     async def record_failure(self) -> None:
-        """Record a failed request. May trip the breaker."""
+        """记录失败请求。可能触发熔断器跳闸。"""
         async with self._lock:
             self.failure_count += 1
             if self.state == CircuitState.HALF_OPEN:
-                # Probe failed, re-open
+                # 探测失败，重新跳闸（OPEN）
                 self.state = CircuitState.OPEN
                 self._opened_at = time.monotonic()
                 logger.warning("[CircuitBreaker] HALF_OPEN -> OPEN (probe failed)")
@@ -93,17 +115,22 @@ class CircuitBreaker:
                 if self.failure_count >= self.failure_threshold:
                     self.state = CircuitState.OPEN
                     self._opened_at = time.monotonic()
-                    logger.warning(
-                        f"[CircuitBreaker] CLOSED -> OPEN (failures={self.failure_count})"
-                    )
+                    logger.warning(f"[CircuitBreaker] CLOSED -> OPEN (failures={self.failure_count})")
 
 
 # =============================================================================
-# Backpressure Controller
+# 背压控制器（Backpressure Controller）
+# 【设计说明】根据滑动窗口的错误率动态调整请求间隔
 # =============================================================================
+
 
 class BackpressureController:
-    """Dynamic concurrency control based on error rate."""
+    """基于错误率的动态并发控制。
+
+    【工作原理】
+    维护一个滑动窗口（默认 20 条）记录最近请求的成功/失败。
+    当错误率超过阈值时，线性增加请求间隔延迟，最高到 max_delay。
+    """
 
     def __init__(
         self,
@@ -117,7 +144,7 @@ class BackpressureController:
         self.error_rate_threshold = error_rate_threshold
         self.max_delay = max_delay
 
-        self._recent_requests: list[bool] = []  # True=success, False=failure
+        self._recent_requests: list[bool] = []  # True=成功，False=失败
         self._window_size = 20
         self._semaphore = asyncio.Semaphore(base_concurrency)
         self._lock = asyncio.Lock()
@@ -131,11 +158,11 @@ class BackpressureController:
 
     @property
     def current_delay(self) -> float:
-        """Calculate inter-request delay based on error rate."""
+        """根据错误率计算请求间隔延迟。"""
         rate = self.error_rate
         if rate <= self.error_rate_threshold:
             return self.base_delay
-        # Linear increase: at 50% error rate -> max_delay
+        # 线性增加：错误率达 50% 时达到 max_delay
         factor = min(1.0, (rate - self.error_rate_threshold) / 0.4)
         return self.base_delay + factor * (self.max_delay - self.base_delay)
 
@@ -146,7 +173,7 @@ class BackpressureController:
                 self._recent_requests.pop(0)
 
     async def acquire(self) -> None:
-        """Wait for semaphore + backpressure delay."""
+        """等待信号量 + 背压延迟。"""
         await self._semaphore.acquire()
         delay = self.current_delay
         if delay > 0:
@@ -157,18 +184,23 @@ class BackpressureController:
 
 
 # =============================================================================
-# FiberHttpClient - Main Client
+# FiberHttpClient - 主客户端
+# 【设计说明】所有工具的统一 HTTP 出口，集成熔断器 + 重试 + 背压
 # =============================================================================
 
-class FiberHttpClient:
-    """
-    Async HTTP client with circuit breaker, retry, and backpressure.
 
-    Timeout tiers:
-      - Single query: 2s
-      - Full query:   3s
-      - Batch ops:    5s
-      - Export:       10s
+class FiberHttpClient:
+    """异步 HTTP 客户端，集成熔断器、重试、背压控制。
+
+    【超时分级】
+    - 单条查询：2s
+    - 完整查询：3s
+    - 批量操作：5s
+    - 导出操作：10s
+
+    【面试知识点】
+    - 为什么分级超时？不同类型的操作合理等待时间不同，
+      单条查询应快速返回，批量操作可以等更久。
     """
 
     def __init__(
@@ -191,7 +223,7 @@ class FiberHttpClient:
         if self.client is None or self.client.is_closed:
             self.client = httpx.AsyncClient(
                 base_url=self.base_url,
-                timeout=httpx.Timeout(10.0),  # Max timeout; per-request overrides below
+                timeout=httpx.Timeout(10.0),  # 最大超时；单次请求可在下方覆盖
                 limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
             )
         return self.client
@@ -200,21 +232,21 @@ class FiberHttpClient:
         if self.client and not self.client.is_closed:
             await self.client.aclose()
 
-    # -- Public API --
+    # -- 公共 API --
 
     async def get(self, path: str, timeout: float = 2.0, params: Optional[dict] = None) -> str:
-        """GET request with circuit breaker + retry + backpressure."""
+        """GET 请求，带熔断器 + 重试 + 背压。"""
         return await self._request("GET", path, timeout=timeout, params=params)
 
     async def post(self, path: str, json: dict | None = None, timeout: float = 5.0) -> str:
-        """POST request with circuit breaker + retry + backpressure."""
+        """POST 请求，带熔断器 + 重试 + 背压。"""
         return await self._request("POST", path, timeout=timeout, json=json)
 
     async def delete(self, path: str, timeout: float = 3.0, params: Optional[dict] = None) -> str:
-        """DELETE request with circuit breaker + retry + backpressure."""
+        """DELETE 请求，带熔断器 + 重试 + 背压。"""
         return await self._request("DELETE", path, timeout=timeout, params=params)
 
-    # -- Internal --
+    # -- 内部实现 --
 
     async def _request(
         self,
@@ -224,15 +256,16 @@ class FiberHttpClient:
         params: Optional[dict] = None,
         json: Optional[dict] = None,
     ) -> str:
-        """Execute request with full resilience pipeline."""
-        # Get trace_id for logging
+        """执行请求，完整弹性管线：熔断检查 → 背压节流 → 重试循环。"""
+        # 获取 trace_id 用于日志跟踪
         from ..observability.request_tracer import get_current_trace_id
+
         trace_id = get_current_trace_id()
 
-        # 1. Circuit breaker check
+        # 1. 熔断器检查
         await self.circuit_breaker.check()
 
-        # 2. Backpressure throttle
+        # 2. 背压节流
         await self.backpressure.acquire()
 
         client = await self._ensure_client()
@@ -240,8 +273,9 @@ class FiberHttpClient:
         request_start = time.time()
 
         logger.info(
-            f"[HTTP-TRACE:{trace_id}] {method} {path} timeout={timeout}s "
-            f"params={params}" if params else f"[HTTP-TRACE:{trace_id}] {method} {path} timeout={timeout}s"
+            f"[HTTP-TRACE:{trace_id}] {method} {path} timeout={timeout}s " f"params={params}"
+            if params
+            else f"[HTTP-TRACE:{trace_id}] {method} {path} timeout={timeout}s"
         )
 
         try:
@@ -262,7 +296,7 @@ class FiberHttpClient:
                     elapsed_ms = round((time.time() - attempt_start) * 1000, 2)
                     body_preview = resp.text[:100] + "..." if len(resp.text) > 100 else resp.text
 
-                    # 4xx: do not retry (client error)
+                    # 4xx：不重试（客户端错误）
                     if 400 <= resp.status_code < 500:
                         logger.info(
                             f"[HTTP-TRACE:{trace_id}] {method} {path} "
@@ -272,7 +306,7 @@ class FiberHttpClient:
                         await self.circuit_breaker.record_success()
                         return resp.text
 
-                    # 5xx: retry with backoff
+                    # 5xx：指数退避重试
                     if resp.status_code >= 500:
                         logger.warning(
                             f"[HTTP-TRACE:{trace_id}] {method} {path} "
@@ -284,7 +318,7 @@ class FiberHttpClient:
                             response=resp,
                         )
 
-                    # 2xx/3xx: success
+                    # 2xx/3xx：成功
                     logger.info(
                         f"[HTTP-TRACE:{trace_id}] {method} {path} "
                         f"status={resp.status_code} elapsed={elapsed_ms}ms body={body_preview}"
@@ -320,10 +354,10 @@ class FiberHttpClient:
         finally:
             self.backpressure.release()
 
-    # -- Health check --
+    # -- 健康检查 --
 
     async def health_check(self) -> bool:
-        """Check if the backend is reachable."""
+        """检查后端是否可达。"""
         try:
             result = await self.get("/health", timeout=2.0)
             return '"ok"' in result or '"status"' in result
@@ -332,36 +366,38 @@ class FiberHttpClient:
 
 
 # =============================================================================
-# Structured Error Helper [v7.1 Layer 3]
+# 结构化错误辅助 [v7.1 Layer 3]
 # =============================================================================
 
+
 def make_error_json(error_code: str, message: str, hint: str = "") -> str:
-    """Build structured error JSON for Tool responses."""
+    """构建工具响应的结构化错误 JSON。"""
     import json as _json
-    return _json.dumps({
-        "error": True,
-        "error_code": error_code,
-        "message": message,
-        "hint": hint,
-    }, ensure_ascii=False)
+
+    return _json.dumps(
+        {
+            "error": True,
+            "error_code": error_code,
+            "message": message,
+            "hint": hint,
+        },
+        ensure_ascii=False,
+    )
 
 
 def assert_positive_int(value: int, name: str) -> None:
-    """Layer 3 assertion: value must be positive integer."""
-    assert isinstance(value, int) and value > 0, (
-        f"[Layer3] {name} must be positive int, got {value!r}"
-    )
+    """Layer 3 断言：值必须是正整数。"""
+    assert isinstance(value, int) and value > 0, f"[Layer3] {name} must be positive int, got {value!r}"
 
 
 def assert_valid_color(color: str) -> None:
-    """Layer 3 assertion: color must be RED/YELLOW/GREEN."""
-    assert color in ("RED", "YELLOW", "GREEN"), (
-        f"[Layer3] Invalid color '{color}', must be RED/YELLOW/GREEN"
-    )
+    """Layer 3 断言：颜色必须是 RED/YELLOW/GREEN。"""
+    assert color in ("RED", "YELLOW", "GREEN"), f"[Layer3] Invalid color '{color}', must be RED/YELLOW/GREEN"
 
 
 # =============================================================================
-# Module-level singleton
+# 模块级单例
+# 【设计说明】所有工具共享同一个 HTTP 客户端实例，复用连接池
 # =============================================================================
 
 fiber_http_client = FiberHttpClient()

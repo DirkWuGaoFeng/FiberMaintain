@@ -1,13 +1,12 @@
 """
-Export tools: PDF, Excel, and CSV report generation.
+导出工具集 —— PDF、Excel 和 CSV 报告生成。
 
-These tools operate locally (no backend API calls).
+这些工具在本地运行（不调用后端 API）。
 """
 
 from __future__ import annotations
 
 import csv
-import json
 import logging
 import os
 import uuid
@@ -18,7 +17,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# Default export directory
+# 默认导出目录
 EXPORT_DIR = os.environ.get("EXPORT_DIR", "/tmp/fiber_reports")
 
 
@@ -41,12 +40,12 @@ class ExportCsvInput(BaseModel):
 
 @tool(args_schema=ExportPdfInput)
 async def export_pdf(title: str, content: str, charts: Optional[list[dict]] = None) -> str:
-    """Export analysis report as PDF file.
-    Returns: file path of generated PDF."""
+    """将分析报告导出为 PDF 文件。
+    返回：生成 PDF 的文件路径。"""
     try:
         from reportlab.lib.pagesizes import A4
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
         from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
         os.makedirs(EXPORT_DIR, exist_ok=True)
         output_path = os.path.join(EXPORT_DIR, f"{uuid.uuid4().hex}.pdf")
@@ -55,11 +54,11 @@ async def export_pdf(title: str, content: str, charts: Optional[list[dict]] = No
         styles = getSampleStyleSheet()
         story = []
 
-        # Title
+        # 标题
         story.append(Paragraph(title, styles["Title"]))
         story.append(Spacer(1, 12))
 
-        # Content (split by paragraphs)
+        # 内容（按段落切分）
         for para in content.split("\n\n"):
             if para.strip():
                 story.append(Paragraph(para.strip(), styles["Normal"]))
@@ -74,8 +73,8 @@ async def export_pdf(title: str, content: str, charts: Optional[list[dict]] = No
 
 @tool(args_schema=ExportExcelInput)
 async def export_excel(title: str, data: list[dict], sheet_name: str = "Sheet1") -> str:
-    """Export tabular data as Excel file.
-    Returns: file path of generated Excel."""
+    """将表格数据导出为 Excel 文件。
+    返回：生成 Excel 的文件路径。"""
     try:
         from openpyxl import Workbook
 
@@ -87,10 +86,10 @@ async def export_excel(title: str, data: list[dict], sheet_name: str = "Sheet1")
         ws.title = sheet_name
 
         if data:
-            # Headers
+            # 表头
             headers = list(data[0].keys())
             ws.append(headers)
-            # Data rows
+            # 数据行
             for row in data:
                 ws.append([row.get(h, "") for h in headers])
 
@@ -103,8 +102,8 @@ async def export_excel(title: str, data: list[dict], sheet_name: str = "Sheet1")
 
 @tool(args_schema=ExportCsvInput)
 async def export_csv(title: str, data: list[dict]) -> str:
-    """Export tabular data as CSV file.
-    Returns: file path of generated CSV."""
+    """将表格数据导出为 CSV 文件。
+    返回：生成 CSV 的文件路径。"""
     try:
         os.makedirs(EXPORT_DIR, exist_ok=True)
         output_path = os.path.join(EXPORT_DIR, f"{uuid.uuid4().hex}.csv")

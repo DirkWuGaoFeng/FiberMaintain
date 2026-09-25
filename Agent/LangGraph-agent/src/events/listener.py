@@ -1,12 +1,12 @@
 """
-WebSocket Event Listener [v7.1].
+WebSocket 事件监听器 [v7.1]。
 
-Connects to WSL C++ backend WebSocket (ws://localhost:8081/ws/v1/events).
-Subscribes to: alarm / fiber_color / fiber_stats events.
-Features:
-- Auto-reconnect (5s interval)
-- Events written to asyncio.Queue for processing
-- Recent event buffer for internal_tools.event_query
+连接到 WSL C++ 后端的 WebSocket（ws://localhost:8081/ws/v1/events）。
+订阅：alarm / fiber_color / fiber_stats 事件。
+特性：
+- 自动重连（5 秒间隔）
+- 事件写入 asyncio.Queue 供处理
+- 近期事件缓冲区，供 internal_tools.event_query 使用
 """
 
 from __future__ import annotations
@@ -22,16 +22,16 @@ from ..config import WS_BACKEND_URL
 
 logger = logging.getLogger(__name__)
 
-RECONNECT_INTERVAL = 5.0  # seconds
+RECONNECT_INTERVAL = 5.0  # 秒
 MAX_RECENT_EVENTS = 100
 
 
 class EventListener:
     """
-    WebSocket event listener with auto-reconnect.
+    带自动重连的 WebSocket 事件监听器。
 
-    Subscribes to backend events and pushes them to an asyncio.Queue
-    for the event router to process.
+    订阅后端事件并将其推送到 asyncio.Queue，
+    供事件路由器处理。
     """
 
     def __init__(self, ws_url: str = ""):
@@ -47,7 +47,7 @@ class EventListener:
         return self._connected
 
     async def start(self) -> None:
-        """Start the event listener background task."""
+        """启动事件监听器后台任务。"""
         if self._running:
             return
         self._running = True
@@ -55,7 +55,7 @@ class EventListener:
         logger.info(f"[EventListener] Started, connecting to {self.ws_url}")
 
     async def stop(self) -> None:
-        """Stop the event listener."""
+        """停止事件监听器。"""
         self._running = False
         if self._task:
             self._task.cancel()
@@ -67,7 +67,7 @@ class EventListener:
         logger.info("[EventListener] Stopped")
 
     async def _listen_loop(self) -> None:
-        """Main listen loop with auto-reconnect."""
+        """带自动重连的主监听循环。"""
         while self._running:
             try:
                 await self._connect_and_listen()
@@ -80,18 +80,20 @@ class EventListener:
                     await asyncio.sleep(RECONNECT_INTERVAL)
 
     async def _connect_and_listen(self) -> None:
-        """Connect to WebSocket and listen for events."""
+        """连接 WebSocket 并监听事件。"""
         import websockets
 
         async with websockets.connect(self.ws_url, ping_interval=20) as ws:
             self._connected = True
             logger.info("[EventListener] Connected to backend WebSocket")
 
-            # Subscribe to event types
-            subscribe_msg = json.dumps({
-                "action": "subscribe",
-                "events": ["alarm", "fiber_color", "fiber_stats"],
-            })
+            # 订阅事件类型
+            subscribe_msg = json.dumps(
+                {
+                    "action": "subscribe",
+                    "events": ["alarm", "fiber_color", "fiber_stats"],
+                }
+            )
             await ws.send(subscribe_msg)
 
             async for message in ws:
@@ -100,20 +102,20 @@ class EventListener:
                 await self._handle_message(message)
 
     async def _handle_message(self, raw: str) -> None:
-        """Parse and enqueue an event message."""
+        """解析并排队一个事件消息。"""
         try:
             event = json.loads(raw)
             event["_received_at"] = time.time()
             event["_id"] = f"evt_{int(time.time()*1000)}_{len(self._recent_events)}"
 
-            # Store in recent buffer
+            # 存入近期事件缓冲区
             self._recent_events.append(event)
 
-            # Push to queue for router processing
+            # 推入队列供路由器处理
             try:
                 self.queue.put_nowait(event)
             except asyncio.QueueFull:
-                # Drop oldest
+                # 丢弃最旧的事件
                 try:
                     self.queue.get_nowait()
                     self.queue.put_nowait(event)
@@ -124,7 +126,7 @@ class EventListener:
             logger.debug(f"[EventListener] Non-JSON message: {raw[:100]}")
 
     def get_recent_events(self, limit: int = 10, event_type: Optional[str] = None) -> list[dict]:
-        """Get recent events (for internal_tools.event_query)."""
+        """获取近期事件（供 internal_tools.event_query 使用）。"""
         events = list(self._recent_events)
         if event_type:
             events = [e for e in events if e.get("type") == event_type or e.get("event_type") == event_type]
@@ -132,19 +134,19 @@ class EventListener:
 
 
 # =============================================================================
-# Singleton
+# 单例
 # =============================================================================
 
 _listener_instance: Optional[EventListener] = None
 
 
 def get_event_listener() -> Optional[EventListener]:
-    """Get the event listener singleton."""
+    """获取事件监听器单例。"""
     return _listener_instance
 
 
 def create_event_listener() -> EventListener:
-    """Create and register the event listener singleton."""
+    """创建并注册事件监听器单例。"""
     global _listener_instance
     if _listener_instance is None:
         _listener_instance = EventListener()

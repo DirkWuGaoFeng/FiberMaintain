@@ -1,13 +1,21 @@
 """
-Conditional edge routing functions for the main graph — v7.1-Final.
+条件边路由函数集 —— v7.1-Final 版本。
 
-Implements:
-- Rule engine three-way routing (fast_path / rule_hit / rule_miss)
-- Parameter gate routing (clarification / params_ok)
-- Intent-based routing to sub-graphs
-- Four termination safeguards for Controlled Loop
-- Narrator validation routing [v7.1]
-- Report evaluation Reflection routing
+【功能说明】
+定义主编排图中所有条件边的路由逻辑，决定节点间的跳转关系。
+
+【路由函数清单】
+- route_after_rule_engine: 规则引擎三路分发（fast_path/rule_hit/rule_miss）
+- route_after_param_gate: 参数门禁路由（clarification/params_ok）
+- route_by_intent: 意图路由（分发到各子图）
+- route_after_analysis: 分析专家四路分发（四重终止保障）
+- route_after_narrator_validation: 叙述校验路由（pass/fail）
+- route_after_evaluation: 报告评估反思路由（pass/refine）
+
+【面试知识点】
+  Q: 为什么路由逻辑单独放在一个文件？
+  A: 路由是图的“决策层”，与节点逻辑分离后便于独立测试和理解。
+     每个路由函数都是纯函数（只读状态，无副作用），易于单元测试。
 """
 
 from __future__ import annotations
@@ -21,18 +29,17 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Rule Engine Routing
+# 规则引擎路由
 # =============================================================================
 
 
 def route_after_rule_engine(state: MainGraphState) -> str:
-    """
-    Three-way routing after rule engine evaluation.
+    """规则引擎评估后的三路路由。
 
-    Returns:
-        "fast_path" — Rule hit + single query → direct execution (< 1s)
-        "rule_hit_complex" — Rule hit + complex → param_gate → normal flow
-        "rule_miss" — No rule match → LLM intent classification (14b)
+    【返回值】
+        "fast_path" — 规则命中 + 单条查询 → 直接执行（< 1s）
+        "rule_hit_complex" — 规则命中 + 复杂处理 → 参数门禁 → 正常流程
+        "rule_miss" — 规则未命中 → LLM 意图分类（14b）
     """
     match = state.get("rule_match")
     if match is None:
@@ -43,17 +50,16 @@ def route_after_rule_engine(state: MainGraphState) -> str:
 
 
 # =============================================================================
-# Parameter Gate Routing
+# 参数门禁路由
 # =============================================================================
 
 
 def route_after_param_gate(state: MainGraphState) -> str:
-    """
-    Routing after parameter validation.
+    """参数验证后的路由。
 
-    Returns:
-        "need_clarification" — Parse failures exist → interrupt() for user input
-        "params_ok" — All parameters valid → proceed to intent routing
+    【返回值】
+        "need_clarification" — 存在解析失败 → 向用户追问
+        "params_ok" — 参数全部合法 → 进入意图路由
     """
     params = state.get("normalized_params")
     if params and params.get("parse_failures"):
@@ -62,22 +68,19 @@ def route_after_param_gate(state: MainGraphState) -> str:
 
 
 # =============================================================================
-# Intent-Based Routing
+# 意图路由
 # =============================================================================
 
 
 def route_by_intent(state: MainGraphState) -> str:
-    """
-    Route to appropriate sub-graph based on identified intent.
+    """根据识别的意图路由到对应子图。
 
-    Reads from RoutingRegistry (Skill system) with hardcoded fallback.
-
-    Mapping:
-        data_query group → data_collector
-        batch → batch_dispatcher
-        knowledge → knowledge_qa
-        report → report_generator
-        chitchat → result_aggregator
+    【路由映射】
+        data_query 组 → data_collector（数据收集子图）
+        batch         → batch_dispatcher（批量派发器）
+        knowledge     → knowledge_qa（知识问答子图）
+        report        → report_generator（报告生成）
+        chitchat      → result_aggregator（直接输出）
     """
     intent = state.get("intent", "chitchat")
 
@@ -98,9 +101,9 @@ def route_by_intent(state: MainGraphState) -> str:
         if group != "chitchat" or intent == "chitchat":
             return group_to_route.get(group, group)
     except (ImportError, KeyError):
-        pass  # Fallback
+        pass  # 兜底
 
-    # Fallback: 硬编码路由（渐进迁移期保留）
+    # 兜底：硬编码路由（渐进迁移期保留）
     data_intents = (
         "single_query",
         "spanloss_analysis",
@@ -128,30 +131,30 @@ def route_by_intent(state: MainGraphState) -> str:
     if intent == "report_generation":
         return "report"
 
-    # Default: chitchat / unknown
+    # 默认：chitchat / unknown
     return "chitchat"
 
 
 # =============================================================================
-# Controlled Loop: Four Termination Safeguards [Core]
+# 受控循环：四重终止保障【核心】
+# 【面试知识点】这是 ReAct 模式的安全阀，防止无限循环
 # =============================================================================
 
 
 def route_after_analysis(state: MainGraphState) -> str:
-    """
-    ReAct Loop core routing — Four Termination Safeguards.
+    """ReAct 循环核心路由 —— 四重终止保障。
 
-    Termination conditions (any one triggers loop exit):
-    ① Round limit: loop_count >= max_loops (3)
-    ② LLM budget: llm_call_count >= max_llm_calls (10)
-    ③ No progress: no_progress_count >= 2
-    ④ Tool all-fail: all API calls returned errors
+    【终止条件】（任一触发即退出循环）
+    ① 轮次上限：loop_count >= max_loops（默认 3）
+    ② LLM 预算：llm_call_count >= max_llm_calls（默认 10）
+    ③ 无进展：no_progress_count >= 2
+    ④ 工具全失败：所有 API 调用返回错误
 
-    Returns:
-        "need_more_data" — Continue loop, go back to data_collector
-        "generate_report" — Exit loop, generate report
-        "direct_narrate" — Exit loop, direct narration
-        "degraded" — Degradation mode, no loop allowed
+    【返回值】
+        "need_more_data" — 继续循环，回到数据收集
+        "generate_report" — 退出循环，生成报告
+        "direct_narrate" — 退出循环，直接叙述
+        "degraded" — 降级模式，不允许循环
     """
     verdict = state.get("analysis_verdict")
     loop_count = state.get("loop_count", 0)
@@ -161,27 +164,27 @@ def route_after_analysis(state: MainGraphState) -> str:
     no_progress = state.get("no_progress_count", 0)
     degradation = state.get("degradation_level", 0)
 
-    # Circuit breaker: degradation mode disallows Loop
+    # 熔断器：降级模式下禁止循环
     if degradation >= 2:
         logger.warning(f"[Routing] Degradation level {degradation}, forcing degraded path")
         return "degraded"
 
-    # ① Round limit
+    # ① 轮次上限
     if loop_count >= max_loops:
         logger.info(f"[Routing] Loop limit reached ({loop_count}/{max_loops})")
         return _exit_loop(state, verdict)
 
-    # ② LLM call budget
+    # ② LLM 调用预算
     if llm_calls >= max_llm_calls:
         logger.info(f"[Routing] LLM budget exhausted ({llm_calls}/{max_llm_calls})")
         return _exit_loop(state, verdict)
 
-    # ③ No progress detection
+    # ③ 无进展检测
     if no_progress >= 2:
         logger.info(f"[Routing] No progress detected ({no_progress} consecutive)")
         return _exit_loop(state, verdict)
 
-    # ④ Tool all-fail (from data_summary)
+    # ④ 工具全失败（从 data_summary 判断）
     data_summary = state.get("collected_data_summary", "")
     if data_summary:
         lines = [line for line in data_summary.split("\n") if line.strip()]
@@ -189,7 +192,7 @@ def route_after_analysis(state: MainGraphState) -> str:
             logger.warning("[Routing] All tool calls failed, entering degradation")
             return "degraded"
 
-    # LLM verdict: does it need more data?
+    # LLM 判断：是否需要更多数据？
     if verdict and verdict.get("need_more_data") and verdict.get("additional_query"):
         return "need_more_data"
 
@@ -197,15 +200,15 @@ def route_after_analysis(state: MainGraphState) -> str:
 
 
 def _exit_loop(state: MainGraphState, verdict: dict | None) -> str:
-    """
-    Determine exit path after loop termination.
+    """确定循环退出后的路径。
 
-    Simple queries → direct narration (7b)
-    Complex analysis → report generation (14b)
+    【决策逻辑】
+    简单查询 → 直接叙述（7b 模型）
+    复杂分析 → 报告生成（14b 模型）
     """
     intent = state.get("intent", "")
 
-    # Simple query intents → direct narrate
+    # 简单查询意图 → 直接叙述
     simple_intents = (
         "spanloss_query",
         "connection_query",
@@ -219,11 +222,11 @@ def _exit_loop(state: MainGraphState, verdict: dict | None) -> str:
     if intent in simple_intents:
         return "direct_narrate"
 
-    # Check severity for report decision
+    # 根据严重程度决定是否生成报告
     if verdict and verdict.get("severity") in ("WARNING", "CRITICAL"):
         return "generate_report"
 
-    # Default: direct narration for simple, report for complex
+    # 默认：简单查询直接叙述，复杂查询生成报告
     if intent in ("trend_analysis", "health_check", "color_diagnosis", "spanloss_analysis"):
         return "generate_report"
 
@@ -231,17 +234,16 @@ def _exit_loop(state: MainGraphState, verdict: dict | None) -> str:
 
 
 # =============================================================================
-# Narrator Validation Routing [v7.1]
+# 叙述校验路由 [v7.1]
 # =============================================================================
 
 
 def route_after_narrator_validation(state: MainGraphState) -> str:
-    """
-    [v7.1] Narrator output validation routing.
+    """[v7.1] 叙述员输出校验路由。
 
-    Returns:
-        "pass" — Validation passed → result_aggregator
-        "fail" — Validation failed → template_fallback (zero LLM)
+    【返回值】
+        "pass" — 校验通过 → result_aggregator
+        "fail" — 校验失败 → template_fallback（零 LLM）
     """
     if state.get("narrator_validation_passed", True):
         return "pass"
@@ -250,17 +252,16 @@ def route_after_narrator_validation(state: MainGraphState) -> str:
 
 
 # =============================================================================
-# Report Evaluation (Reflection) Routing
+# 报告评估（反思循环）路由
 # =============================================================================
 
 
 def route_after_evaluation(state: MainGraphState) -> str:
-    """
-    Reflection Loop routing — at most 1 refinement.
+    """反思循环路由 —— 最多 1 次优化。
 
-    Returns:
-        "pass" — Report quality acceptable → result_aggregator
-        "refine" — Needs improvement → report_generator (max 1 time)
+    【返回值】
+        "pass" — 报告质量可接受 → result_aggregator
+        "refine" — 需要改进 → report_generator（最多 1 次）
     """
     eval_result = state.get("report_eval", {})
     refinement_count = eval_result.get("refinement_count", 0)
@@ -268,7 +269,7 @@ def route_after_evaluation(state: MainGraphState) -> str:
     if eval_result.get("passed", True):
         return "pass"
 
-    # Force pass after 1 refinement attempt
+    # 1 次优化后强制通过
     if refinement_count >= 1:
         logger.info("[Routing] Report refinement limit reached, forcing pass")
         return "pass"
@@ -277,16 +278,16 @@ def route_after_evaluation(state: MainGraphState) -> str:
 
 
 # =============================================================================
-# Utility Functions
+# 工具函数
 # =============================================================================
 
 
 def compute_action_signature(action: str, observation: str) -> str:
-    """
-    Compute MD5 hash of action + observation for no-progress detection.
+    """计算动作 + 观察的 MD5 哈希，用于无进展检测。
 
-    Used by analysis_expert to detect when the loop is making no progress
-    (same action + same observation = no new information gained).
+    【功能说明】
+    分析专家用此函数检测循环是否取得进展：
+    相同动作 + 相同观察 = 没有新信息 = 无进展。
     """
-    content = f"{action}|{observation[:500]}"  # Truncate to 500 chars
+    content = f"{action}|{observation[:500]}"  # 截断为 500 字符
     return hashlib.md5(content.encode()).hexdigest()

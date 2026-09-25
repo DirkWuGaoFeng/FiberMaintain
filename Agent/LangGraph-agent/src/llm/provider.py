@@ -1,16 +1,16 @@
 """
-LLM Provider - Three-Tier Gradient Architecture [v7.1].
+LLM Provider - 三层梯度架构 [v7.1]。
 
-Tier 1 (Primary):   reasoning-heavy — intent classification, analysis, report
-Tier 2 (Secondary): expression/narration — narrator, knowledge QA, rewriting
-Tier 3 (Tertiary):  emergency fallback for L2 degradation
+Tier 1（主层）：  重推理 — 意图分类、分析、报告
+Tier 2（次级）：  表达/叙述 — 叙述员、知识问答、改写
+Tier 3（轻量层）：L2 降级时的应急兜底
 
-Provider modes (per-tier, via LLM_*_PROVIDER, default LLM_PROVIDER):
-- "ollama": local Ollama (default, qwen2.5 gradient)
-- "openai": any OpenAI-compatible API (e.g. Alibaba Cloud Bailian / DashScope)
-Tiers may mix providers, e.g. primary=Bailian API, secondary/tertiary=local Ollama.
+Provider 模式（按层配置，通过 LLM_*_PROVIDER，默认 LLM_PROVIDER）：
+- "ollama": 本地 Ollama（默认，qwen2.5 梯度）
+- "openai": 任意 OpenAI 兼容 API（如阿里云百炼 / DashScope）
+各层可混用 Provider，例如主层=Bailian API，次级/轻量层=本地 Ollama。
 
-Degradation path: primary unavailable → secondary takes over → tertiary → template
+降级路径：主层不可用 → 次级接管 → 轻量层 → 模板
 """
 
 from __future__ import annotations
@@ -23,23 +23,21 @@ from langchain_ollama import ChatOllama, OllamaEmbeddings
 from ..config import (
     EMBEDDING_MODEL,
     LLM_CONFIG,
-    LLMTierConfig,
     OLLAMA_BASE_URL,
     OPENAI_API_BASE,
     OPENAI_API_KEY,
+    LLMTierConfig,
 )
 
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Three-Tier LLM Instances [v7.1]
+# 三层 LLM 实例 [v7.1]
 # =============================================================================
 
 
-def _build_tier_llm(
-    cfg: LLMTierConfig, temperature: float, num_ctx: int | None = None
-) -> BaseChatModel:
+def _build_tier_llm(cfg: LLMTierConfig, temperature: float, num_ctx: int | None = None) -> BaseChatModel:
     """按该层级的 provider 构建聊天模型实例.
 
     ollama 层走本地 ChatOllama；openai 层走 OpenAI 兼容协议
@@ -49,10 +47,7 @@ def _build_tier_llm(
         from langchain_openai import ChatOpenAI
 
         if not OPENAI_API_KEY:
-            logger.warning(
-                f"[LLM] 层级模型 {cfg.model} 使用 openai 协议但未配置 "
-                "OPENAI_API_KEY / DASHSCOPE_API_KEY"
-            )
+            logger.warning(f"[LLM] 层级模型 {cfg.model} 使用 openai 协议但未配置 " "OPENAI_API_KEY / DASHSCOPE_API_KEY")
         return ChatOpenAI(
             model=cfg.model,
             temperature=temperature,
@@ -77,10 +72,10 @@ def _build_tier_llm(
 
 def get_primary_llm(temperature: float | None = None) -> BaseChatModel:
     """
-    Primary LLM: reasoning-heavy tasks.
+    主层 LLM：重推理任务。
 
-    Use cases: intent classification, parameter extraction,
-    analysis expert, report generation, report evaluation.
+    使用场景：意图分类、参数提取、
+    分析专家、报告生成、报告评估。
     """
     cfg = LLM_CONFIG["primary"]
     return _build_tier_llm(
@@ -92,9 +87,9 @@ def get_primary_llm(temperature: float | None = None) -> BaseChatModel:
 
 def get_secondary_llm(temperature: float | None = None) -> BaseChatModel:
     """
-    Secondary LLM: expression/narration tasks.
+    次级 LLM：表达/叙述任务。
 
-    Use cases: narrator, knowledge QA, query rewriting, clarification.
+    使用场景：叙述员、知识问答、查询改写、澄清。
     """
     cfg = LLM_CONFIG["secondary"]
     return _build_tier_llm(
@@ -106,22 +101,20 @@ def get_secondary_llm(temperature: float | None = None) -> BaseChatModel:
 
 def get_tertiary_llm(temperature: float | None = None) -> BaseChatModel:
     """
-    Tertiary LLM: emergency fallback only.
+    轻量层 LLM：仅用于应急兜底。
 
-    Use cases: L2 degradation minimal reasoning, template filling.
+    使用场景：L2 降级的最小推理、模板填充。
     """
     cfg = LLM_CONFIG["tertiary"]
-    return _build_tier_llm(
-        cfg, temperature if temperature is not None else cfg.temperature
-    )
+    return _build_tier_llm(cfg, temperature if temperature is not None else cfg.temperature)
 
 
 def get_llm_with_fallback(temperature: float = 0.1) -> BaseChatModel:
     """
-    Get LLM with full three-tier fallback chain.
+    获取带完整三层兜底链的 LLM。
 
-    Chain: primary → secondary → tertiary
-    Triggers on: TimeoutException, ConnectError
+    兜底链：主 → 次 → 末
+    触发条件：TimeoutException、ConnectError
     """
     import httpx
 
@@ -136,61 +129,61 @@ def get_llm_with_fallback(temperature: float = 0.1) -> BaseChatModel:
 
 
 # =============================================================================
-# Specialized LLM Accessors (per node requirements)
+# 专用 LLM 访问器（按各节点需求）
 # =============================================================================
 
 
 def get_intent_llm() -> BaseChatModel:
-    """Intent classifier: primary tier, temperature=0.0 (maximum determinism)."""
+    """意图分类器：主层级，temperature=0.0（最高确定性）。"""
     return get_primary_llm(temperature=0.0)
 
 
 def get_analysis_llm() -> BaseChatModel:
-    """Analysis expert: primary tier, temperature=0.1 (slight creativity)."""
+    """分析专家：主层级，temperature=0.1（轻微创造性）。"""
     return get_primary_llm(temperature=0.1)
 
 
 def get_narrator_llm() -> BaseChatModel:
-    """Narrator: secondary tier, temperature=0.3 (natural expression)."""
+    """叙述员：次级层级，temperature=0.3（自然表达）。"""
     return get_secondary_llm(temperature=0.3)
 
 
 def get_knowledge_llm() -> BaseChatModel:
-    """Knowledge QA: secondary tier, temperature=0.5 (conversational)."""
+    """知识问答：次级层级，temperature=0.5（对话式）。"""
     return get_secondary_llm(temperature=0.5)
 
 
 def get_report_llm() -> BaseChatModel:
-    """Report generator: primary tier, temperature=0.3 (structured writing)."""
+    """报告生成器：主层级，temperature=0.3（结构化写作）。"""
     return get_primary_llm(temperature=0.3)
 
 
 def get_report_eval_llm() -> BaseChatModel:
-    """Report evaluator (Reflection): primary tier, temperature=0.1."""
+    """报告评估器（反思）：主层，temperature=0.1。"""
     return get_primary_llm(temperature=0.1)
 
 
 def get_query_rewriter_llm() -> BaseChatModel:
-    """Query rewriter for RAG: secondary tier, temperature=0.1."""
+    """RAG 查询改写器：次级层级，temperature=0.1。"""
     return get_secondary_llm(temperature=0.1)
 
 
 def get_data_collector_llm() -> BaseChatModel:
-    """Data collector (tool calling): primary tier, temperature=0.0."""
+    """数据采集器（工具调用）：主层，temperature=0.0。"""
     return get_primary_llm(temperature=0.0)
 
 
 def get_batch_llm() -> BaseChatModel:
-    """Batch aggregation: primary with fallback, temperature=0.1.
+    """批量聚合：主层级带兜底，temperature=0.1。
 
-    Returns BaseChatModel (may be ChatOpenAI when primary uses the
-    Bailian API provider — [P0-D] fixed the stale ChatOllama annotation).
+    返回 BaseChatModel（当主层级使用百炼 API provider 时可能为
+    ChatOpenAI — [P0-D] 修复了过时的 ChatOllama 注解）。
     """
     return get_llm_with_fallback(temperature=0.1)
 
 
 # =============================================================================
-# Embedding Model [v7.1: Ollama-based]
+# Embedding 模型 [v7.1: 基于 Ollama]
 # =============================================================================
 
 _embedding_instance: OllamaEmbeddings | None = None
@@ -198,9 +191,9 @@ _embedding_instance: OllamaEmbeddings | None = None
 
 def get_embedding_model() -> OllamaEmbeddings:
     """
-    Get Ollama embedding model (bge-large or nomic-embed-text).
+    获取 Ollama embedding 模型（bge-large 或 nomic-embed-text）。
 
-    Lazy-initialized singleton to avoid loading at import time.
+    懒加载单例，避免在导入时加载。
     """
     global _embedding_instance
     if _embedding_instance is None:

@@ -1,21 +1,21 @@
 """
-Fiber Maintenance Agent Server — v7.2-Final.
+光纤维护 Agent 服务器 — v7.2-Final。
 
-FastAPI application with:
-  POST /fiber-agent/invoke   - Synchronous invocation
-  POST /fiber-agent/stream   - Streaming invocation
-  GET  /health               - Health check (multi-component)
-  GET  /metrics              - Prometheus metrics
-  POST /api/v1/rules/reload  - Hot-reload rule engine
-  POST /api/v1/skills/reload - Hot-reload skill system (atomic)
-  GET  /api/v1/skills        - List loaded skills
-  GET  /api/batch/{thread_id}/progress - Batch progress query
+FastAPI 应用，提供以下接口：
+  POST /fiber-agent/invoke   - 同步调用
+  POST /fiber-agent/stream   - 流式调用
+  GET  /health               - 健康检查（多组件）
+  GET  /metrics              - Prometheus 指标
+  POST /api/v1/rules/reload  - 规则引擎热重载
+  POST /api/v1/skills/reload - 技能系统热重载（原子操作）
+  GET  /api/v1/skills        - 列出已加载的技能
+  GET  /api/batch/{thread_id}/progress - 批量进度查询
 
-Startup:
-  - Initialize EventListener + EventRouter
-  - Initialize DegradationManager (background probe)
-  - Initialize LocalCache
-  - Initialize SkillLoader (skills/ YAML)
+启动流程：
+  - 初始化 EventListener + EventRouter
+  - 初始化 DegradationManager（后台探测）
+  - 初始化 LocalCache
+  - 初始化 SkillLoader（skills/ YAML）
 """
 
 from __future__ import annotations
@@ -23,31 +23,67 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import logging.handlers
 import os
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load environment variables
+# 加载环境变量
 load_dotenv()
+
+# =============================================================================
+# 日志配置：控制台 + 文件轮转
+# =============================================================================
+_LOG_DIR = Path(__file__).parent.parent / "data" / "logs"
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+_LOG_FILE = _LOG_DIR / "agent.log"
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+# 文件轮转日志：10MB × 5 个备份
+_file_handler = logging.handlers.RotatingFileHandler(
+    _LOG_FILE,
+    maxBytes=10 * 1024 * 1024,
+    backupCount=5,
+    encoding="utf-8",
+)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logging.getLogger().addHandler(_file_handler)
+
 logger = logging.getLogger(__name__)
+logger.info(f"[Server] File logging enabled: {_LOG_FILE}")
 
 VERSION = "7.2.0"
 
 # 主图已知的 19 个节点 ID（用于从 SSE 事件中提取节点执行跟踪）
-_GRAPH_NODE_NAMES = frozenset([
-    "input_guard", "rule_engine", "fast_path_executor", "intent_classifier",
-    "param_gate", "clarification", "intent_router", "data_collector",
-    "rule_judgment", "analysis_expert", "narrator", "narrator_validator",
-    "template_fallback", "report_generator", "report_evaluator",
-    "batch_dispatcher", "knowledge_qa", "result_aggregator", "degradation_handler",
-])
+_GRAPH_NODE_NAMES = frozenset(
+    [
+        "input_guard",
+        "rule_engine",
+        "fast_path_executor",
+        "intent_classifier",
+        "param_gate",
+        "clarification",
+        "intent_router",
+        "data_collector",
+        "rule_judgment",
+        "analysis_expert",
+        "narrator",
+        "narrator_validator",
+        "template_fallback",
+        "report_generator",
+        "report_evaluator",
+        "batch_dispatcher",
+        "knowledge_qa",
+        "result_aggregator",
+        "degradation_handler",
+    ]
+)
 
 # 活动 span 跟踪（按节点名存储开始时间）
 _active_node_spans: dict[str, float] = {}
@@ -89,7 +125,8 @@ def _trace_event_to_spans(tracer, event: dict) -> None:
 
             # 直接记录为已完成的 span（不使用 context manager，因为是事后记录）
             tracer._span_counter += 1
-            from .observability.request_tracer import TraceSpan, SLOW_SPAN_THRESHOLD_MS
+            from .observability.request_tracer import SLOW_SPAN_THRESHOLD_MS, TraceSpan
+
             span = TraceSpan(
                 span_id=f"{tracer.trace_id}-{tracer._span_counter:03d}",
                 node_name=name,
@@ -102,9 +139,7 @@ def _trace_event_to_spans(tracer, event: dict) -> None:
             tracer.spans.append(span)
 
             if span.is_slow:
-                logger.warning(
-                    f"[TRACE:{tracer.trace_id}] [{name}] ⚠ SLOW {duration_ms}ms"
-                )
+                logger.warning(f"[TRACE:{tracer.trace_id}] [{name}] ⚠ SLOW {duration_ms}ms")
 
     elif event_type == "on_tool_end":
         # 工具调用结束 — 记录为子 span
@@ -120,19 +155,20 @@ def _trace_event_to_spans(tracer, event: dict) -> None:
 
 @asynccontextmanager
 async def lifespan(app):
-    """Application lifespan: startup and shutdown hooks."""
-    # === Startup ===
+    """应用生命周期：启动与关闭钩子。"""
+    # === 启动 ===
     logger.info(f"[Server] Starting Fiber Maintenance Agent v{VERSION}")
 
-    # Initialize LocalCache
+    # 初始化 LocalCache
     try:
         from .cache.local_cache import create_local_cache
+
         await create_local_cache()
         logger.info("[Server] LocalCache initialized")
     except Exception as e:
         logger.warning(f"[Server] LocalCache init failed: {e}")
 
-    # Initialize EventListener + Router
+    # 初始化 EventListener + Router
     try:
         from .events.listener import create_event_listener
         from .events.router import get_event_router
@@ -145,18 +181,20 @@ async def lifespan(app):
     except Exception as e:
         logger.warning(f"[Server] Event system init failed: {e}")
 
-    # Initialize DegradationManager
+    # 初始化 DegradationManager
     try:
         from .resilience.degradation import create_degradation_manager
+
         dm = create_degradation_manager()
         await dm.start()
         logger.info("[Server] DegradationManager started")
     except Exception as e:
         logger.warning(f"[Server] DegradationManager init failed: {e}")
 
-    # Initialize RAG Engine (hybrid retrieval)
+    # 初始化 RAG 引擎（混合检索）
     try:
         from .rag.engine import get_rag_engine
+
         rag_engine = get_rag_engine()
         ok = await rag_engine.initialize()
         if ok:
@@ -166,9 +204,10 @@ async def lifespan(app):
     except Exception as e:
         logger.warning(f"[Server] RAG Engine init failed: {e}")
 
-    # Initialize Skill System (YAML-driven triggers/routing/judgment)
+    # 初始化技能系统（YAML 驱动的触发/路由/判定）
     try:
         from .skills.loader import get_skill_loader
+
         loader = get_skill_loader()
         skill_count = len(loader.all_skills())
         logger.info(f"[Server] Skill system initialized ({skill_count} skills)")
@@ -177,7 +216,7 @@ async def lifespan(app):
 
     yield
 
-    # === Shutdown ===
+    # === 关闭 ===
     logger.info("[Server] Shutting down...")
     try:
         from .events.listener import get_event_listener
@@ -196,8 +235,96 @@ async def lifespan(app):
         logger.debug(f"[Server] Shutdown cleanup: {e}")
 
 
+# =============================================================================
+# 多轮追问上下文恢复
+# 【设计说明】当上一轮因缺少参数而追问用户时，用户的补充回复（如"光纤3"）
+# 需要结合上一轮的意图来理解。本模块在图执行前恢复上下文。
+# =============================================================================
+
+# 需要特定参数的意图 → 参数提取方式（按优先级排列）
+# 【设计说明】追问回复可能是 "光纤3"、"3号"、"FIB-003" 或纯数字 "3"
+_CLARIFICATION_PARAM_EXTRACTORS = {
+    "spanloss_query": [("fiber_id", [r"(?:光纤|FIB)[-_]?(\d+)", r"^(\d+)\s*号?$", r"^FIB[-_]?(\d+)$"])],
+    "spanloss_analysis": [("fiber_id", [r"(?:光纤|FIB)[-_]?(\d+)", r"^(\d+)\s*号?$", r"^FIB[-_]?(\d+)$"])],
+    "connection_query": [("fiber_id", [r"(?:光纤|FIB)[-_]?(\d+)", r"^(\d+)\s*号?$", r"^FIB[-_]?(\d+)$"])],
+    "performance_query": [("fiber_id", [r"(?:光纤|FIB)[-_]?(\d+)", r"^(\d+)\s*号?$", r"^FIB[-_]?(\d+)$"])],
+    "fiber_alarm_query": [("fiber_id", [r"(?:光纤|FIB)[-_]?(\d+)", r"^(\d+)\s*号?$", r"^FIB[-_]?(\d+)$"])],
+    "single_query": [("fiber_id", [r"(?:光纤|FIB)[-_]?(\d+)", r"^(\d+)\s*号?$", r"^FIB[-_]?(\d+)$"])],
+    "trend_analysis": [("fiber_id", [r"(?:光纤|FIB)[-_]?(\d+)", r"^(\d+)\s*号?$", r"^FIB[-_]?(\d+)$"])],
+    "color_diagnosis": [("fiber_id", [r"(?:光纤|FIB)[-_]?(\d+)", r"^(\d+)\s*号?$", r"^FIB[-_]?(\d+)$"])],
+    "port_alarm_query": [("board_id", [r"(\d+)\s*(?:号?盘|号?板)"]), ("port_id", [r"(\d+)\s*(?:号?口|号?端口)"])],
+}
+
+
+async def _restore_clarification_context(graph, state: dict, thread_id: str, user_msg: str) -> None:
+    """检查上一轮是否有 pending clarification，若是则恢复意图上下文。
+
+    【功能说明】
+    多轮对话场景：
+      轮次1: "查询光纤衰耗" → 追问 "请告诉我您要查询哪根光纤的衰耗"
+      轮次2: "光纤3" → 应理解为 "查询光纤3的衰耗"
+
+    实现方式：
+    1. 通过 Checkpointer 获取上一轮状态
+    2. 检查是否因参数缺失而追问（processing_path == "clarification"）
+    3. 尝试将当前输入解析为缺失参数
+    4. 成功则注入上一轮意图，使图直接走 fast_path
+
+    【参数说明】
+        graph: 编译后的 LangGraph 实例
+        state: 当前轮次的初始状态（会被原地修改）
+        thread_id: 对话线程 ID
+        user_msg: 用户当前输入
+    """
+    import re as _re
+
+    config = {"configurable": {"thread_id": thread_id}}
+    try:
+        prev_state = await graph.aget_state(config)
+    except Exception:
+        return
+
+    if not prev_state or not prev_state.values:
+        return
+
+    prev_values = prev_state.values
+    # 仅当上一轮以 clarification 结束时才恢复
+    if prev_values.get("processing_path") != "clarification":
+        return
+
+    prev_intent = prev_values.get("intent")
+    if not prev_intent or prev_intent not in _CLARIFICATION_PARAM_EXTRACTORS:
+        return
+
+    # 尝试从当前输入提取缺失参数
+    extractors = _CLARIFICATION_PARAM_EXTRACTORS[prev_intent]
+    params = {}
+    for param_name, patterns in extractors:
+        # 尝试多个模式，取第一个匹配的
+        for pattern in patterns:
+            m = _re.search(pattern, user_msg, _re.IGNORECASE)
+            if m:
+                params[param_name] = int(m.group(1))
+                break  # 匹配成功，跳过其他模式
+
+    if not params:
+        return  # 未能提取任何参数，让图正常处理
+
+    # 注入恢复的上下文
+    state["intent"] = prev_intent
+    state["rule_match"] = {
+        "intent": prev_intent,
+        "params": params,
+        "confidence": 1.0,
+        "template_id": f"T_{prev_intent.upper()}",
+        "fast_path_eligible": True,
+    }
+    state["processing_path"] = "fast"
+    logger.info(f"[Server] Restored clarification context: " f"prev_intent={prev_intent} params={params}")
+
+
 def create_app():
-    """Create the FastAPI application with all v7.1 routes."""
+    """创建包含所有 v7.1 路由的 FastAPI 应用。"""
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
 
@@ -208,7 +335,7 @@ def create_app():
         lifespan=lifespan,
     )
 
-    # CORS middleware
+    # CORS 中间件
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -217,12 +344,12 @@ def create_app():
         allow_headers=["*"],
     )
 
-    # ===== Health Check (Enhanced v7.1) =====
+    # ===== 健康检查（v7.1 增强） =====
     @app.get("/health")
     async def health():
-        """Enhanced health check — returns status of all components.
+        """增强版健康检查 —— 返回所有组件的状态。
 
-        Response format:
+        响应格式：
         {
             "agent": "ok",
             "version": "7.1.0",
@@ -307,6 +434,7 @@ def create_app():
         # 熔断器状态
         try:
             from .tools._http_client import fiber_http_client
+
             cb_state = fiber_http_client.circuit_breaker.state.value
             result["circuit_breaker"] = cb_state
         except Exception:
@@ -315,6 +443,7 @@ def create_app():
         # 降级等级
         try:
             from .resilience.degradation import get_degradation_manager
+
             dm = get_degradation_manager()
             if dm:
                 status = dm.get_status()
@@ -326,32 +455,35 @@ def create_app():
 
         return result
 
-    # ===== Prometheus Metrics =====
+    # ===== Prometheus 指标 =====
     @app.get("/metrics")
     async def metrics_endpoint():
         try:
-            from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
             from fastapi.responses import Response
+            from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
             return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
         except ImportError:
             return {"error": "prometheus_client not installed"}
 
-    # ===== Rule Engine Hot-Reload =====
+    # ===== 规则引擎热重载 =====
     @app.post("/api/v1/rules/reload")
     async def reload_rules():
         try:
             from .nodes.rule_engine import RuleEngine
+
             count = RuleEngine.reload_rules()
             return {"status": "ok", "rules_loaded": count}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    # ===== Skill System Hot-Reload =====
+    # ===== 技能系统热重载 =====
     @app.post("/api/v1/skills/reload")
     async def reload_skills():
-        """Hot-reload all Skill YAML files (atomic: all-or-nothing)."""
+        """热重载所有技能 YAML 文件（原子操作：全有或全无）。"""
         try:
             from .skills.loader import get_skill_loader
+
             loader = get_skill_loader()
             count = loader.reload()
             return {"status": "ok", "skills_loaded": count}
@@ -360,9 +492,10 @@ def create_app():
 
     @app.get("/api/v1/skills")
     async def list_skills():
-        """List all loaded skills with metadata."""
+        """列出所有已加载的技能及其元数据。"""
         try:
             from .skills.loader import get_skill_loader
+
             loader = get_skill_loader()
             skills = loader.all_skills()
             return {
@@ -383,10 +516,10 @@ def create_app():
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    # ===== Main Invoke Endpoint =====
+    # ===== 主调用接口 =====
     @app.post("/invoke")
     async def invoke(request: dict):
-        """Primary invoke endpoint (fallback if LangServe unavailable)."""
+        """主调用接口（LangServe 不可用时的兜底方案）。"""
         start_time = time.time()
         try:
             from .graph.main_graph import get_graph
@@ -396,18 +529,24 @@ def create_app():
             graph = get_graph()
             user_msg = request.get("message", "")
             thread_id = request.get("thread_id", "default")
+            # 用户标识（可选，[v7.4] user_memory 偏好注入）
+            user_id = request.get("user_id", "")
 
             if not user_msg:
                 raise HTTPException(status_code=400, detail="message is required")
 
-            state = create_initial_state(user_msg, thread_id)
+            state = create_initial_state(user_msg, thread_id, user_id)
             config = {"configurable": {"thread_id": thread_id}}
+
+            # 多轮追问上下文恢复：检查上一轮是否有 pending clarification
+            await _restore_clarification_context(graph, state, thread_id, user_msg)
+
             result = await graph.ainvoke(state, config)
 
             output = result.get("final_output", "")
             latency_ms = int((time.time() - start_time) * 1000)
 
-            # Audit log
+            # 审计日志
             await write_request_audit(
                 request_id=result.get("request_id", ""),
                 user_input=user_msg,
@@ -430,15 +569,16 @@ def create_app():
             logger.error(f"[Server] Invoke error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    # ===== Frontend Management APIs (knowledge/threads/graph/memory/metrics) =====
+    # ===== 前端管理 API（知识库/线程/图/记忆/指标） =====
     try:
         from .frontend_api import router as frontend_router
+
         app.include_router(frontend_router)
         logger.info("[Server] Frontend API routes registered")
     except Exception as e:
         logger.warning(f"[Server] Frontend API routes failed to register: {e}")
 
-    # ===== SSE Stream Endpoint (replaces LangServe) =====
+    # ===== SSE 流式接口（替代 LangServe） =====
     from sse_starlette.sse import EventSourceResponse
 
     # SSE 流全局超时（秒）— v7.2: 默认 120s 以适应 LLM 冷启动场景
@@ -448,33 +588,37 @@ def create_app():
 
     @app.post("/fiber-agent/stream")
     async def fiber_agent_stream(request: dict):
-        """SSE streaming endpoint — compatible with frontend sse.ts event parsing.
+        """SSE 流式接口 —— 与前端 sse.ts 的事件解析兼容。
 
-        v7.2: Integrated full-chain RequestTracer for per-node timing and bottleneck detection.
-        Added global timeout (60s) + heartbeat (5s) to prevent infinite hang.
+        v7.2：集成全链路 RequestTracer，用于逐节点耗时统计与瓶颈检测。
+        新增全局超时（60s）+ 心跳（5s）以防止无限挂起。
         """
         from .graph.main_graph import get_graph
         from .graph.state import create_initial_state
-        from .observability.request_tracer import RequestTracer
         from .observability.metrics import metrics
+        from .observability.request_tracer import RequestTracer
 
-        # Parse LangServe-style request: {input: {messages, thread_id, user_input}, config: {...}}
+        # 解析 LangServe 风格请求：{input: {messages, thread_id, user_input}, config: {...}}
         inp = request.get("input", {})
         user_msg = inp.get("user_input", "")
         if not user_msg:
             msgs = inp.get("messages", [])
             user_msg = msgs[-1]["content"] if msgs else ""
-        thread_id = (
-            inp.get("thread_id", "")
-            or request.get("config", {}).get("configurable", {}).get("thread_id", "default")
+        thread_id = inp.get("thread_id", "") or request.get("config", {}).get("configurable", {}).get(
+            "thread_id", "default"
         )
+        # 用户标识（可选，[v7.4] user_memory 偏好注入）
+        user_id = inp.get("user_id", "")
 
         if not user_msg:
             raise HTTPException(status_code=400, detail="message is required")
 
         graph = get_graph()
-        state = create_initial_state(user_msg, thread_id)
+        state = create_initial_state(user_msg, thread_id, user_id)
         config = {"configurable": {"thread_id": thread_id}}
+
+        # 多轮追问上下文恢复：检查上一轮是否有 pending clarification
+        await _restore_clarification_context(graph, state, thread_id, user_msg)
 
         # 创建全链路跟踪器（使用 state 中生成的 trace_id）
         tracer = RequestTracer(user_input=user_msg, trace_id=state.get("trace_id"))
@@ -482,7 +626,7 @@ def create_app():
         async def event_generator():
             start_time = time.time()
             last_heartbeat = start_time
-            final_output = ""  # Track final output for dedicated event
+            final_output = ""  # 记录最终输出，用于专门的 final_output 事件
             processing_path = "normal"
 
             try:
@@ -492,8 +636,10 @@ def create_app():
                         now = time.time()
 
                         # 捕获 final_output（从 result_aggregator 或 fast_path_executor）
-                        if (event.get("event") == "on_chain_end"
-                                and event.get("name") in ("result_aggregator", "fast_path_executor")):
+                        if event.get("event") == "on_chain_end" and event.get("name") in (
+                            "result_aggregator",
+                            "fast_path_executor",
+                        ):
                             output = event.get("data", {}).get("output", {})
                             if isinstance(output, dict) and output.get("final_output"):
                                 final_output = output["final_output"]
@@ -501,8 +647,7 @@ def create_app():
                                 processing_path = output["processing_path"]
 
                         # 记录规则命中（从 rule_engine 节点输出）
-                        if (event.get("event") == "on_chain_end"
-                                and event.get("name") == "rule_engine"):
+                        if event.get("event") == "on_chain_end" and event.get("name") == "rule_engine":
                             output = event.get("data", {}).get("output", {})
                             if isinstance(output, dict) and output.get("rule_match"):
                                 rm = output["rule_match"]
@@ -532,10 +677,11 @@ def create_app():
 
                 # 流正常结束后，发送 final_output 事件（前端用于填充快速路径结果）
                 if final_output:
-                    yield {"data": json.dumps({
-                        "event": "final_output",
-                        "data": {"output": final_output}
-                    }, ensure_ascii=False)}
+                    yield {
+                        "data": json.dumps(
+                            {"event": "final_output", "data": {"output": final_output}}, ensure_ascii=False
+                        )
+                    }
 
                 # 完成跟踪
                 tracer.finish(processing_path=processing_path, final_output=final_output)
@@ -583,17 +729,19 @@ def create_app():
 
     logger.info("[Server] SSE stream endpoint registered at /fiber-agent/stream")
 
-    # ===== Trace Diagnostics API [v7.2] =====
+    # ===== 链路追踪诊断 API [v7.2] =====
     @app.get("/api/v1/traces")
     async def list_traces(limit: int = 20):
-        """List recent trace summaries for diagnostics."""
+        """列出最近的追踪摘要，用于诊断。"""
         from .observability.request_tracer import get_recent_traces
+
         return {"traces": get_recent_traces(limit)}
 
     @app.get("/api/v1/traces/{trace_id}")
     async def get_trace_detail(trace_id: str):
-        """Get full trace detail by trace_id (reads from data/traces/)."""
+        """按 trace_id 获取完整追踪详情（从 data/traces/ 读取）。"""
         from pathlib import Path
+
         from .config import DATA_DIR
 
         trace_file = Path(DATA_DIR) / "traces" / f"{trace_id}.json"
@@ -604,11 +752,12 @@ def create_app():
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    # ===== Batch Progress =====
+    # ===== 批量进度 =====
     @app.get("/api/batch/{thread_id}/progress")
     async def get_batch_progress(thread_id: str):
         try:
             from .graph.main_graph import get_graph
+
             graph = get_graph()
             state = await graph.aget_state({"configurable": {"thread_id": thread_id}})
             if state and state.values:
@@ -617,11 +766,12 @@ def create_app():
         except Exception as e:
             return {"error": str(e)}
 
-    # ===== Degradation Status =====
+    # ===== 降级状态 =====
     @app.get("/api/v1/degradation")
     async def degradation_status():
         try:
             from .resilience.degradation import get_degradation_manager
+
             dm = get_degradation_manager()
             if dm:
                 return dm.get_status()
@@ -632,17 +782,18 @@ def create_app():
     return app
 
 
-# Module-level app instance for uvicorn
+# 供 uvicorn 使用的模块级应用实例
 app = create_app()
 
 
-# ===== WebSocket Endpoint (defined at module level for proper registration) =====
-from fastapi import WebSocket as _WS, WebSocketDisconnect as _WSD
+# ===== WebSocket 接口（在模块级定义以确保正确注册） =====
+from fastapi import WebSocket as _WS
+from fastapi import WebSocketDisconnect as _WSD
 
 
 @app.websocket("/ws/v1/events")
 async def ws_events_endpoint(websocket: _WS):
-    """WebSocket endpoint for real-time event push (heartbeat + future alarms)."""
+    """WebSocket 接口：实时事件推送（心跳 + 未来的告警推送）。"""
     await websocket.accept()
     try:
         while True:
@@ -655,6 +806,7 @@ async def ws_events_endpoint(websocket: _WS):
 
 if __name__ == "__main__":
     import uvicorn
+
     host = os.environ.get("AGENT_HOST", "0.0.0.0")
     port = int(os.environ.get("AGENT_PORT", "8000"))
     uvicorn.run("src.server:app", host=host, port=port, reload=True)

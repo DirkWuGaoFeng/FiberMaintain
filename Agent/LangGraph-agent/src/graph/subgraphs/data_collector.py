@@ -1,17 +1,17 @@
 """
-Data Collector Node — ReAct Agent + ToolNode [v7.1].
+数据采集节点 — ReAct Agent + ToolNode [v7.1]。
 
-This is the ONLY component that binds backend API tools (P2 principle).
-Uses create_react_agent internally for automatic tool-calling loop.
+这是唯一绑定后端 API 工具的组件（P2 原则）。
+内部使用 create_react_agent 实现自动工具调用循环。
 
-Receives context from MainGraphState:
-- user_input, normalized_params, intent → builds targeted collection prompt
-- analysis_verdict.additional_query → ReAct loop re-collection
+从 MainGraphState 接收上下文：
+- user_input、normalized_params、intent → 构建针对性的采集提示词
+- analysis_verdict.additional_query → ReAct 循环补充采集
 
-Returns:
-- collected_data_summary: condensed data for rule_judgment / analysis
-- messages: tool-calling trace (appended)
-- llm_call_count: incremented
+返回：
+- collected_data_summary: 供 rule_judgment / analysis 使用的精简数据
+- messages: 工具调用轨迹（追加）
+- llm_call_count: 自增
 """
 
 from __future__ import annotations
@@ -19,16 +19,15 @@ from __future__ import annotations
 import json
 import logging
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
-from ...config import MAX_LOOPS
 from ...llm.provider import get_data_collector_llm
 from ...tools import DATA_COLLECTOR_TOOLS
 
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# System Prompt for Data Collection
+# 数据采集系统提示词
 # =============================================================================
 
 DATA_COLLECTOR_SYSTEM = """你是光纤维护系统的数据采集员。
@@ -50,13 +49,13 @@ DATA_COLLECTOR_SYSTEM = """你是光纤维护系统的数据采集员。
 
 def _build_collection_prompt(state: dict) -> str:
     """
-    Build targeted data collection prompt from MainGraphState context.
+    根据 MainGraphState 上下文构建有针对性的数据采集提示词。
 
-    Handles both initial collection and ReAct loop re-collection.
+    同时处理初次采集与 ReAct 循环中的补充采集。
     """
     parts = []
 
-    # Check if this is a re-collection request from analysis_expert
+    # 检查是否为 analysis_expert 发起的补充采集请求
     verdict = state.get("analysis_verdict")
     if verdict and isinstance(verdict, dict):
         additional = verdict.get("additional_query")
@@ -72,12 +71,12 @@ def _build_collection_prompt(state: dict) -> str:
                 parts.append(f"参数：{json.dumps(params, ensure_ascii=False)}")
             parts.append("")
 
-    # User's original request
+    # 用户的原始请求
     user_input = state.get("user_input", "")
     if user_input:
         parts.append(f"## 用户请求\n{user_input}")
 
-    # Normalized parameters
+    # 归一化参数
     params = state.get("normalized_params")
     if params and isinstance(params, dict):
         param_desc = []
@@ -94,9 +93,9 @@ def _build_collection_prompt(state: dict) -> str:
         if params.get("end_time"):
             param_desc.append(f"结束时间: {params['end_time']}")
         if param_desc:
-            parts.append(f"## 已解析参数\n" + "\n".join(param_desc))
+            parts.append("## 已解析参数\n" + "\n".join(param_desc))
 
-    # Intent hint
+    # 意图提示
     intent = state.get("intent", "")
     if intent:
         parts.append(f"## 意图类型\n{intent}")
@@ -107,14 +106,14 @@ def _build_collection_prompt(state: dict) -> str:
 
 async def data_collector_subgraph(state: dict) -> dict:
     """
-    Data collector node: ReAct Agent with backend API tools.
+    数据采集器节点：带后端 API 工具的 ReAct Agent。
 
-    Architecture:
-    - LLM: qwen2.5:14b, temperature=0.0 (tool calling accuracy)
-    - Tools: 12+ backend API tools (topology, performance, alarm, colored, stats)
-    - Recursion limit: 10 (prevent infinite tool-calling loops)
+    架构说明：
+    - LLM：qwen2.5:14b，temperature=0.0（工具调用准确性）
+    - 工具：12+ 后端 API 工具（拓扑、性能、告警、着色、统计）
+    - 递归上限：10（防止无限工具调用循环）
 
-    This function wraps create_react_agent to interface with MainGraphState.
+    该函数封装 create_react_agent 以对接 MainGraphState。
     """
     import time
 
@@ -129,20 +128,20 @@ async def data_collector_subgraph(state: dict) -> dict:
     try:
         llm = get_data_collector_llm()
 
-        # Build the ReAct agent
+        # 构建 ReAct Agent
         agent = create_react_agent(
             model=llm,
             tools=DATA_COLLECTOR_TOOLS,
             prompt=DATA_COLLECTOR_SYSTEM,
         )
 
-        # Invoke with focused message
+        # 使用聚焦消息调用
         result = await agent.ainvoke(
             {"messages": [HumanMessage(content=prompt_text)]},
             config={"recursion_limit": 10},
         )
 
-        # Extract final AI response as data summary
+        # 提取最终的 AI 回答作为数据摘要
         messages = result.get("messages", [])
         data_summary = ""
         for msg in reversed(messages):
@@ -153,25 +152,24 @@ async def data_collector_subgraph(state: dict) -> dict:
         if not data_summary:
             data_summary = "数据采集未返回有效结果。"
 
-        # Truncate to prevent state bloat
+        # 截断以防止状态膨胀
         if len(data_summary) > 3000:
             data_summary = data_summary[:3000] + "\n...(数据已截断)"
 
         elapsed_ms = round((time.time() - start_time) * 1000, 2)
-        logger.info(
-            f"[TRACE:{trace_id}] [data_collector] OK {elapsed_ms}ms "
-            f"summary_len={len(data_summary)} chars"
-        )
+        logger.info(f"[TRACE:{trace_id}] [data_collector] OK {elapsed_ms}ms " f"summary_len={len(data_summary)} chars")
 
         return {
             "collected_data_summary": data_summary,
             "llm_call_count": state.get("llm_call_count", 0) + 1,
-            "audit_trail": [{
-                "node": "data_collector",
-                "action": "tool_collection",
-                "tools_available": len(DATA_COLLECTOR_TOOLS),
-                "summary_length": len(data_summary),
-            }],
+            "audit_trail": [
+                {
+                    "node": "data_collector",
+                    "action": "tool_collection",
+                    "tools_available": len(DATA_COLLECTOR_TOOLS),
+                    "summary_length": len(data_summary),
+                }
+            ],
         }
 
     except Exception as e:
@@ -181,9 +179,11 @@ async def data_collector_subgraph(state: dict) -> dict:
         return {
             "collected_data_summary": error_msg,
             "llm_call_count": state.get("llm_call_count", 0) + 1,
-            "audit_trail": [{
-                "node": "data_collector",
-                "action": "error",
-                "error": str(e),
-            }],
+            "audit_trail": [
+                {
+                    "node": "data_collector",
+                    "action": "error",
+                    "error": str(e),
+                }
+            ],
         }

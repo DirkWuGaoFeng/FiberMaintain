@@ -1,14 +1,17 @@
 """
-Colored fiber tools: query fibers by color status.
+颜色光纤工具集 —— 按颜色状态查询光纤。
 
-Maps to C++ API Gateway endpoints:
-  - GET /api/v1/fibers/colored?color=X
-  - GET /api/v1/fibers/colored/all
+【对应后端 API】
+  - GET /api/v1/fibers/colored?color=X    — 按颜色查询（RED/YELLOW/GREEN）
+  - GET /api/v1/fibers/colored/all        — 查询所有颜色光纤
+
+【颜色含义】
+  - RED：严重异常（中断/严重超标）
+  - YELLOW：告警状态（性能偏高）
+  - GREEN：正常状态
 """
 
 from __future__ import annotations
-
-from typing import Optional
 
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
@@ -21,13 +24,13 @@ class ColoredFiberInput(BaseModel):
 
 
 class AllColoredFiberInput(BaseModel):
-    pass  # No parameters needed
+    pass  # 无需参数
 
 
 @tool(args_schema=ColoredFiberInput)
 async def colored_fibers_query(color: str) -> str:
-    """Query fibers with specific color status (RED/YELLOW/GREEN).
-    Returns: JSON with fibers array (fiber info, color, scenario_type)."""
+    """按颜色状态查询光纤（RED/YELLOW/GREEN）。
+    返回：JSON，含光纤数组（fiber info, color, scenario_type）。"""
     return await fiber_http_client.get(
         "/api/v1/fibers/colored",
         timeout=2.0,
@@ -37,8 +40,8 @@ async def colored_fibers_query(color: str) -> str:
 
 @tool(args_schema=AllColoredFiberInput)
 async def all_colored_fibers_query() -> str:
-    """Query all colored fibers (RED + YELLOW + GREEN).
-    Returns: JSON with all colored fibers array."""
+    """查询所有颜色光纤（RED + YELLOW + GREEN）。
+    返回：JSON，含所有颜色光纤数组。"""
     return await fiber_http_client.get(
         "/api/v1/fibers/colored/all",
         timeout=3.0,

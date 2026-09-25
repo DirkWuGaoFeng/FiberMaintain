@@ -1,13 +1,13 @@
 """
-Health Probe [v7.1].
+健康探测 [v7.1]。
 
-Provides health check for:
-- LLM service (Ollama local, or OpenAI-compatible API such as Bailian)
-- C++ Backend (API Gateway)
-- ChromaDB (vector store, optional)
+提供以下组件的健康检查：
+- LLM 服务（本地 Ollama，或 OpenAI 兼容 API，如百炼）
+- C++ 后端（API 网关）
+- ChromaDB（向量库，可选）
 
-Used by:
-- /health endpoint in server.py
+被以下模块使用：
+- server.py 中的 /health 端点
 - DegradationManager
 - internal_tools.system_health
 """
@@ -32,14 +32,14 @@ logger = logging.getLogger(__name__)
 
 
 class HealthProbe:
-    """Multi-component health probe."""
+    """多组件健康探测器。"""
 
     def __init__(self):
         self._last_check: dict[str, dict] = {}
 
     async def check_all(self) -> dict:
         """
-        Check all components and return health status.
+        检查所有组件并返回健康状态。
 
         Returns:
             {
@@ -50,16 +50,16 @@ class HealthProbe:
         """
         components = {}
 
-        # LLM service (Ollama or OpenAI-compatible API)
+        # LLM 服务（Ollama 或 OpenAI 兼容 API）
         components["llm"] = await self._check_llm_service()
 
-        # Backend
+        # 后端
         components["backend"] = await self._check_backend()
 
-        # ChromaDB (optional)
+        # ChromaDB（可选）
         components["chromadb"] = await self._check_chromadb()
 
-        # Determine overall status
+        # 确定整体状态
         statuses = [c["status"] for c in components.values()]
         if all(s == "healthy" for s in statuses):
             overall = "healthy"
@@ -78,7 +78,7 @@ class HealthProbe:
         return result
 
     async def _check_llm_service(self) -> dict:
-        """Check health of every LLM provider actually in use by tiers."""
+        """检查各层级实际使用的每个 LLM 提供商的健康状态。"""
         providers = {cfg.provider for cfg in LLM_CONFIG.values()}
         per_provider: dict[str, dict] = {}
         if "openai" in providers:
@@ -96,7 +96,7 @@ class HealthProbe:
         return {"status": overall, "providers": per_provider}
 
     async def _check_openai(self) -> dict:
-        """Check OpenAI-compatible API health (e.g. Bailian DashScope)."""
+        """检查 OpenAI 兼容 API 的健康状态（例如百炼 DashScope）。"""
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(
@@ -123,7 +123,7 @@ class HealthProbe:
             return {"status": "unhealthy", "error": str(e)}
 
     async def _check_ollama(self) -> dict:
-        """Check Ollama service health."""
+        """检查 Ollama 服务的健康状态。"""
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
@@ -139,9 +139,10 @@ class HealthProbe:
             return {"status": "unhealthy", "error": str(e)}
 
     async def _check_backend(self) -> dict:
-        """Check C++ backend health."""
+        """检查 C++ 后端的健康状态。"""
         try:
             from ..tools._http_client import fiber_http_client
+
             ok = await fiber_http_client.health_check()
             circuit_state = fiber_http_client.circuit_breaker.state.value
             return {
@@ -152,7 +153,7 @@ class HealthProbe:
             return {"status": "unhealthy", "error": str(e)}
 
     async def _check_chromadb(self) -> dict:
-        """Check ChromaDB health (optional component)."""
+        """检查 ChromaDB 的健康状态（可选组件）。"""
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.get(f"http://{CHROMADB_HOST}:{CHROMADB_PORT}/api/v1/heartbeat")
@@ -160,14 +161,14 @@ class HealthProbe:
                     return {"status": "healthy"}
                 return {"status": "degraded", "http_code": resp.status_code}
         except Exception:
-            # ChromaDB is optional — don't mark as unhealthy
+            # ChromaDB 为可选组件 — 不标记为 unhealthy
             return {"status": "degraded", "note": "ChromaDB not reachable (optional)"}
 
     @property
     def last_result(self) -> dict:
-        """Get the last health check result."""
+        """获取上一次健康检查结果。"""
         return self._last_check
 
 
-# Module-level instance
+# 模块级实例
 health_probe = HealthProbe()

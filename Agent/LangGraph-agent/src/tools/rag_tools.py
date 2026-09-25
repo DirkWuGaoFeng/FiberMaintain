@@ -1,27 +1,26 @@
 """
-RAG tools: knowledge base retrieval via ChromaDB + BM25 hybrid search.
+RAG 工具集 —— 通过 ChromaDB + BM25 混合检索实现知识库检索。
 
-These tools are used by report_generator and knowledge_assistant sub-graphs.
-They operate locally against the ChromaDB vector store (not the C++ backend).
+这些工具由 report_generator 和 knowledge_assistant 子图使用。
+它们在本地对 ChromaDB 向量库执行检索（不访问 C++ 后端）。
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# Lazy-initialized retriever (set via init_rag_tools)
+# 延迟初始化的检索器（通过 init_rag_tools 设置）
 _retriever = None
 
 
 def init_rag_tools(retriever) -> None:
-    """Initialize RAG tools with the shared retriever instance."""
+    """使用共享的检索器实例初始化 RAG 工具。"""
     global _retriever
     _retriever = retriever
 
@@ -38,8 +37,8 @@ class RAGSearchInput(BaseModel):
 
 @tool(args_schema=RAGQueryInput)
 async def rag_query(query: str, category: str = "all") -> str:
-    """Search the fiber maintenance knowledge base, returns top 3 most relevant knowledge chunks.
-    Categories: device_manual, maintenance_guide, alarm_guide, fault_cases, threshold_standard, ne_config."""
+    """检索光纤维护知识库，返回最相关的前 3 条知识片段。
+    分类：device_manual、maintenance_guide、alarm_guide、fault_cases、threshold_standard、ne_config。"""
     if _retriever is None:
         return json.dumps({"error": "RAG retriever not initialized", "results": []})
 
@@ -47,12 +46,14 @@ async def rag_query(query: str, category: str = "all") -> str:
         docs = await _retriever.ainvoke(query)
         results = []
         for doc in docs[:3]:
-            results.append({
-                "content": doc.page_content[:500],
-                "source": doc.metadata.get("source", "unknown"),
-                "category": doc.metadata.get("category", "general"),
-                "score": doc.metadata.get("relevance_score", 0),
-            })
+            results.append(
+                {
+                    "content": doc.page_content[:500],
+                    "source": doc.metadata.get("source", "unknown"),
+                    "category": doc.metadata.get("category", "general"),
+                    "score": doc.metadata.get("relevance_score", 0),
+                }
+            )
         return json.dumps(results, ensure_ascii=False)
     except Exception as e:
         logger.error(f"[RAG] Query failed: {e}")
@@ -61,8 +62,8 @@ async def rag_query(query: str, category: str = "all") -> str:
 
 @tool(args_schema=RAGSearchInput)
 async def rag_search(query: str, top_k: int = 3) -> str:
-    """Search knowledge base with configurable result count.
-    Returns: JSON array of knowledge chunks with content and source."""
+    """检索知识库，结果数量可配置。
+    返回：知识片段（含内容与来源）的 JSON 数组。"""
     if _retriever is None:
         return json.dumps({"error": "RAG retriever not initialized", "results": []})
 
@@ -70,11 +71,13 @@ async def rag_search(query: str, top_k: int = 3) -> str:
         docs = await _retriever.ainvoke(query)
         results = []
         for doc in docs[:top_k]:
-            results.append({
-                "content": doc.page_content[:800],
-                "source": doc.metadata.get("source", "unknown"),
-                "category": doc.metadata.get("category", "general"),
-            })
+            results.append(
+                {
+                    "content": doc.page_content[:800],
+                    "source": doc.metadata.get("source", "unknown"),
+                    "category": doc.metadata.get("category", "general"),
+                }
+            )
         return json.dumps(results, ensure_ascii=False)
     except Exception as e:
         logger.error(f"[RAG] Search failed: {e}")

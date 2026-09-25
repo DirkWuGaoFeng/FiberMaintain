@@ -9,6 +9,7 @@ v8 安全层 — InputGuard + 参数校验 + Clarification.
 
 零 LLM 调用，纯规则，延迟 < 1ms。
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,13 +41,16 @@ _COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in INJECTION_PATTERNS]
 MAX_INPUT_LENGTH = 2000
 
 # 需要 fiber_id 的场景（参数校验用）
+# 【修复】意图名与 rule_engine / intent_classifier 实际输出对齐
 _SCENARIOS_REQUIRING_FIBER_ID = {
-    "spanloss_check",
-    "oop_check",
-    "iop_check",
+    "spanloss_query",
+    "spanloss_analysis",
+    "single_query",
+    "connection_query",
     "performance_query",
-    "fiber_status",
-    "alarm_check",
+    "fiber_alarm_query",
+    "trend_analysis",
+    "color_diagnosis",
 }
 
 
@@ -87,9 +91,7 @@ def sanitize_input(user_input: str) -> str:
     return user_input
 
 
-def validate_params(
-    intent: str, params: dict[str, Any]
-) -> Optional[str]:
+def validate_params(intent: str, params: dict[str, Any]) -> Optional[str]:
     """
     参数完整性校验.
 

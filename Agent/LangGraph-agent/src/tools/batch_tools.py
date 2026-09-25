@@ -1,14 +1,14 @@
 """
-Batch tools: batch fiber performance, spanloss, alarm, and connection queries.
+批量工具集 —— 批量查询光纤性能、跨段衰耗、告警与连接关系。
 
-These tools are used by the batch_processor sub-graph via Send mechanism.
-Each tool accepts a chunk_id for idempotency tracking.
+这些工具通过 Send 机制由 batch_processor 子图调用。
+每个工具都接收 chunk_id 用于幂等跟踪。
 
-Maps to C++ API Gateway batch endpoints:
+对应 C++ API Gateway 的批量接口：
   - POST /api/v1/topology/fibers/batch
   - POST /api/v1/boards/batch
-  - POST /api/v1/fibers/performance/batch  (via individual calls)
-  - POST /api/v1/fibers/spanloss/batch     (via individual calls)
+  - POST /api/v1/fibers/performance/batch  （经由单条调用聚合）
+  - POST /api/v1/fibers/spanloss/batch     （经由单条调用聚合）
 """
 
 from __future__ import annotations
@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Input Schemas
+# 输入参数契约（Input Schemas）
 # =============================================================================
+
 
 class BatchPerformanceInput(BaseModel):
     fiber_ids: list[str] = Field(description="Fiber IDs to query (max 50)")
@@ -50,23 +51,21 @@ class BatchConnectionInput(BaseModel):
 
 
 # =============================================================================
-# Batch Tools
+# 批量工具（Batch Tools）
 # =============================================================================
+
 
 @tool(args_schema=BatchPerformanceInput)
 async def batch_fiber_performance_query(fiber_ids: list[str], chunk_id: str) -> str:
-    """Batch query fiber performance metrics for multiple fibers.
-    Queries each fiber individually and aggregates results.
-    Returns: JSON with results array and error summary."""
+    """批量查询多条光纤的性能指标。
+    逐条查询每条光纤并汇总结果。
+    返回：JSON，包含结果数组与错误汇总。"""
     results = []
     errors = []
     numeric_ids = [fid.replace("FIB-", "") for fid in fiber_ids]
 
-    # Query each fiber concurrently within the chunk
-    tasks = [
-        fiber_http_client.get(f"/api/v1/fibers/{fid}/performance", timeout=3.0)
-        for fid in numeric_ids
-    ]
+    # 在块内并发查询各光纤
+    tasks = [fiber_http_client.get(f"/api/v1/fibers/{fid}/performance", timeout=3.0) for fid in numeric_ids]
     responses = await asyncio.gather(*tasks, return_exceptions=True)
 
     for fid, resp in zip(numeric_ids, responses):
@@ -78,26 +77,26 @@ async def batch_fiber_performance_query(fiber_ids: list[str], chunk_id: str) -> 
             except json.JSONDecodeError:
                 errors.append({"fiber_id": fid, "error": "Invalid JSON response"})
 
-    return json.dumps({
-        "chunk_id": chunk_id,
-        "count": len(results),
-        "results": results,
-        "errors": errors,
-    }, ensure_ascii=False)
+    return json.dumps(
+        {
+            "chunk_id": chunk_id,
+            "count": len(results),
+            "results": results,
+            "errors": errors,
+        },
+        ensure_ascii=False,
+    )
 
 
 @tool(args_schema=BatchSpanlossInput)
 async def batch_fiber_spanloss_query(fiber_ids: list[str], chunk_id: str) -> str:
-    """Batch query fiber span loss for multiple fibers.
-    Returns: JSON with results array (fiber_id, spanloss per fiber)."""
+    """批量查询多条光纤的跨段衰耗。
+    返回：JSON，包含结果数组（fiber_id，每条光纤的 spanloss）。"""
     results = []
     errors = []
     numeric_ids = [fid.replace("FIB-", "") for fid in fiber_ids]
 
-    tasks = [
-        fiber_http_client.get(f"/api/v1/fibers/{fid}/spanloss", timeout=3.0)
-        for fid in numeric_ids
-    ]
+    tasks = [fiber_http_client.get(f"/api/v1/fibers/{fid}/spanloss", timeout=3.0) for fid in numeric_ids]
     responses = await asyncio.gather(*tasks, return_exceptions=True)
 
     for fid, resp in zip(numeric_ids, responses):
@@ -109,24 +108,26 @@ async def batch_fiber_spanloss_query(fiber_ids: list[str], chunk_id: str) -> str
             except json.JSONDecodeError:
                 errors.append({"fiber_id": fid, "error": "Invalid JSON response"})
 
-    return json.dumps({
-        "chunk_id": chunk_id,
-        "count": len(results),
-        "results": results,
-        "errors": errors,
-    }, ensure_ascii=False)
+    return json.dumps(
+        {
+            "chunk_id": chunk_id,
+            "count": len(results),
+            "results": results,
+            "errors": errors,
+        },
+        ensure_ascii=False,
+    )
 
 
 @tool(args_schema=BatchAlarmInput)
 async def batch_alarm_query(board_ids: list[str], chunk_id: str) -> str:
-    """Batch query alarms for multiple boards.
-    Returns: JSON with alarms aggregated across all boards."""
+    """批量查询多个单盘的告警。
+    返回：JSON，汇总所有单盘的告警。"""
     all_alarms = []
     errors = []
 
     tasks = [
-        fiber_http_client.get("/api/v1/alarms/current", timeout=3.0, params={"board_id": bid})
-        for bid in board_ids
+        fiber_http_client.get("/api/v1/alarms/current", timeout=3.0, params={"board_id": bid}) for bid in board_ids
     ]
     responses = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -141,18 +142,21 @@ async def batch_alarm_query(board_ids: list[str], chunk_id: str) -> str:
             except json.JSONDecodeError:
                 errors.append({"board_id": bid, "error": "Invalid JSON response"})
 
-    return json.dumps({
-        "chunk_id": chunk_id,
-        "total_alarms": len(all_alarms),
-        "alarms": all_alarms,
-        "errors": errors,
-    }, ensure_ascii=False)
+    return json.dumps(
+        {
+            "chunk_id": chunk_id,
+            "total_alarms": len(all_alarms),
+            "alarms": all_alarms,
+            "errors": errors,
+        },
+        ensure_ascii=False,
+    )
 
 
 @tool(args_schema=BatchConnectionInput)
 async def batch_fiber_connection_query(fiber_ids: list[str], chunk_id: str) -> str:
-    """Batch query fiber connections via the topology batch endpoint.
-    Returns: JSON with batch result from backend."""
+    """通过拓扑批量接口批量查询光纤连接关系。
+    返回：JSON，为后端批量查询结果。"""
     numeric_ids = [int(fid.replace("FIB-", "")) for fid in fiber_ids]
     return await fiber_http_client.post(
         "/api/v1/topology/fibers/batch",

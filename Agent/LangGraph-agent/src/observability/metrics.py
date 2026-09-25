@@ -1,23 +1,22 @@
 """
-Prometheus Metrics [v7.1].
+Prometheus 指标 [v7.1]。
 
-Tracks:
-- request_total: total requests processed
-- rule_hit_total: L0 rule engine hits
-- tool_calls_total: backend API tool calls
-- loop_iterations_total: ReAct loop iterations
-- degradation_level: current degradation level (gauge)
-- token_usage_total: estimated token consumption
-- narrator_validation_failures: Narrator validator failures
-- request_duration_seconds: request processing time
+跟踪的指标：
+- request_total：已处理的请求总数
+- rule_hit_total：L0 规则引擎命中次数
+- tool_calls_total：后端 API 工具调用次数
+- loop_iterations_total：ReAct 循环迭代次数
+- degradation_level：当前降级级别（gauge）
+- token_usage_total：预估 token 消耗量
+- narrator_validation_failures：Narrator 校验失败次数
+- request_duration_seconds：请求处理耗时
 
-Mounted at /metrics endpoint in server.py.
+挂载于 server.py 的 /metrics 端点。
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ try:
     from prometheus_client import Counter, Gauge, Histogram
 
     class Metrics:
-        """Prometheus metrics collector."""
+        """Prometheus 指标收集器。"""
 
         def __init__(self):
             self.request_total = Counter(
@@ -74,9 +73,7 @@ try:
             self.rule_hit_total.labels(rule_id=rule_id).inc()
 
         def record_tool_call(self, tool_name: str, success: bool) -> None:
-            self.tool_calls_total.labels(
-                tool_name=tool_name, status="success" if success else "error"
-            ).inc()
+            self.tool_calls_total.labels(tool_name=tool_name, status="success" if success else "error").inc()
 
         def record_loop_iteration(self) -> None:
             self.loop_iterations_total.inc()
@@ -99,14 +96,30 @@ except ImportError:
     logger.warning("[Metrics] prometheus_client not installed, metrics disabled")
 
     class _NoopMetrics:
-        """No-op metrics when prometheus_client is unavailable."""
-        def record_request(self, *a, **kw): pass
-        def record_rule_hit(self, *a, **kw): pass
-        def record_tool_call(self, *a, **kw): pass
-        def record_loop_iteration(self, *a, **kw): pass
-        def set_degradation_level(self, *a, **kw): pass
-        def record_tokens(self, *a, **kw): pass
-        def record_narrator_failure(self, *a, **kw): pass
-        def observe_duration(self, *a, **kw): pass
+        """当 prometheus_client 不可用时的空操作指标。"""
+
+        def record_request(self, *a, **kw):
+            pass
+
+        def record_rule_hit(self, *a, **kw):
+            pass
+
+        def record_tool_call(self, *a, **kw):
+            pass
+
+        def record_loop_iteration(self, *a, **kw):
+            pass
+
+        def set_degradation_level(self, *a, **kw):
+            pass
+
+        def record_tokens(self, *a, **kw):
+            pass
+
+        def record_narrator_failure(self, *a, **kw):
+            pass
+
+        def observe_duration(self, *a, **kw):
+            pass
 
     metrics = _NoopMetrics()

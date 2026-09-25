@@ -7,15 +7,20 @@ v8 LangGraph 图定义 — 双模式入口.
 图结构：
   input_guard → lead_router → orchestrator → END
   input_guard → END（注入拦截）
+
+【改进】
+  - [P0-B] AsyncSqliteSaver 检查点器（与 v7.1 对齐，支持会话持久化）
+  - [P0-A] ContextCompressor 上下文压缩（摘要替代滑动窗口）
 """
+
 from __future__ import annotations
 
 import logging
 import os
-from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+from ..config import CHECKPOINT_DB
 from .lead_router import LeadRouter
 from .migration import is_scenario_v8_enabled
 from .models import ExecutionPlan, V8State
@@ -29,7 +34,16 @@ _orchestrator = Orchestrator()
 
 
 async def input_guard_node(state: dict) -> dict:
-    """安全层节点：注入检测 + 长度截断."""
+    """安全层节点：注入检测 + 长度截断 + 上下文压缩.
+
+    【改进 P0-A】
+    使用 ContextCompressor 替换滑动窗口裁剪：
+    - 历史对话超过 MESSAGE_WINDOW_SIZE 轮时，生成摘要
+    - 保留关键实体（光纤ID、时间范围）
+    - 输出注入到 prompt，避免历史信息丢失
+    """
+    from ..memory.context_compressor import get_context_compressor
+
     user_input = state.get("user_input", "")
     verdict = run_security_check(user_input)
 
@@ -41,6 +55,21 @@ async def input_guard_node(state: dict) -> dict:
             "final_status": "BLOCKED",
             "processing_path": "blocked",
         }
+
+    # [P0-A] 上下文压缩：检查历史消息是否需要摘要
+    messages = state.get("messages", [])
+    if messages and len(messages) > 10:
+        try:
+            compressor = get_context_compressor(use_llm=True)
+            summary = await compressor.compress_if_needed(messages, window_size=10)
+            if summary:
+                logger.info(f"[v8:input_guard] Context compressed: " f"{len(messages)} msgs → summary")
+                return {
+                    "user_input": verdict.sanitized_input,
+                    "conversation_summary": summary.to_dict(),
+                }
+        except Exception as e:
+            logger.warning(f"[v8:input_guard] Context compression failed: {e}")
 
     return {"user_input": verdict.sanitized_input}
 
@@ -94,10 +123,7 @@ def route_after_router(state: dict) -> str:
     plan_data = state.get("execution_plan", {})
     scenario_id = plan_data.get("scenario_id", "")
     if not is_scenario_v8_enabled(scenario_id):
-        logger.info(
-            f"[v8] Scenario '{scenario_id}' not in whitelist, "
-            f"marking for v7.1 fallback"
-        )
+        logger.info(f"[v8] Scenario '{scenario_id}' not in whitelist, " f"marking for v7.1 fallback")
         return "v7_fallback"
     return "orchestrator"
 
@@ -119,6 +145,7 @@ async def orchestrator_node(state: dict) -> dict:
         user_input=state.get("user_input", ""),
         trace_id=state.get("trace_id", ""),
         session_id=state.get("session_id", ""),
+        user_id=state.get("user_id", ""),
         execution_plan=plan,
         normalized_params=state.get("normalized_params", {}),
     )
@@ -134,7 +161,15 @@ async def orchestrator_node(state: dict) -> dict:
 
 
 def build_v8_graph():
-    """构建 v8 图（5 节点 + 条件路由）."""
+    """构建 v8 图（5 节点 + 条件路由 + 检查点器）.
+
+    【检查点器】
+    复用 v7.1 的 AsyncSqliteSaver（懒加载），支持：
+    - 会话状态持久化（进程重启不丢失）
+    - 多轮追问上下文保持
+    - HITL 交互支持
+    """
+    from ..graph.main_graph import _create_checkpointer
     from ..graph.state import MainGraphState
 
     graph = StateGraph(MainGraphState)
@@ -150,7 +185,9 @@ def build_v8_graph():
     graph.add_edge("orchestrator", END)
     graph.add_edge("v7_fallback", END)
 
-    return graph.compile()
+    checkpointer = _create_checkpointer()
+    logger.info(f"[v8_graph] Compiled with checkpointer: {CHECKPOINT_DB}")
+    return graph.compile(checkpointer=checkpointer)
 
 
 def is_v8_mode() -> bool:

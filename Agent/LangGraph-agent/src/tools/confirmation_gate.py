@@ -1,17 +1,14 @@
 """
-Write-operation confirmation gate [改进清单 P1-B].
+写操作确认门控 [改进清单 P1-B]。
 
-Lightweight HITL for real write operations (pull_call_create /
-pull_call_cancel). Design:
+针对真实写操作（pull_call_create / pull_call_cancel）的轻量级 HITL（人在回路）机制。设计：
 
-- Tools never write without a valid confirmation token.
-- First invocation stores the request as a pending action and returns a
-  token; the frontend renders a confirm card (ClarifyCard pattern).
-- User confirmation pops the pending action and executes it.
-- Pending actions expire (CONFIRM_TTL_SECONDS) and are capped, so a
-  chatty LLM cannot accumulate unbounded write intents.
+- 没有有效的确认令牌，工具绝不执行写操作。
+- 首次调用将请求登记为待确认动作并返回令牌；前端渲染确认卡片（ClarifyCard 模式）。
+- 用户确认后弹出待确认动作并执行。
+- 待确认动作会过期（CONFIRM_TTL_SECONDS）并设有上限，避免话痨的 LLM 积累无界写意图。
 
-Risk grading: read-only tools carry no gate; write tools are gated.
+风险评估：只读工具不加门控；写工具必须通过门控。
 """
 
 from __future__ import annotations
@@ -24,12 +21,12 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-CONFIRM_TTL_SECONDS = 600  # 10 minutes to confirm
+CONFIRM_TTL_SECONDS = 600  # 确认有效期 10 分钟
 MAX_PENDING = 50
 
 
 class ConfirmationGate:
-    """In-memory registry of pending write operations awaiting user consent."""
+    """等待用户确认的待执行写操作的内存注册表。"""
 
     def __init__(self, ttl_seconds: int = CONFIRM_TTL_SECONDS, max_pending: int = MAX_PENDING):
         self._ttl = ttl_seconds
@@ -37,10 +34,8 @@ class ConfirmationGate:
         self._pending: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
-    def request(
-        self, operation: str, params: dict, description: str
-    ) -> Optional[dict]:
-        """Register a write intent. Returns the pending entry or None when full."""
+    def request(self, operation: str, params: dict, description: str) -> Optional[dict]:
+        """注册一个写意图。返回待确认条目；队列已满时返回 None。"""
         with self._lock:
             self._evict_expired_locked()
             if len(self._pending) >= self._max_pending:
@@ -59,7 +54,7 @@ class ConfirmationGate:
             return entry
 
     def confirm(self, token: str) -> Optional[dict]:
-        """Consume a pending entry. Returns it once, or None when unknown/expired."""
+        """消费一个待确认条目。每条只返回一次；未知或已过期时返回 None。"""
         with self._lock:
             entry = self._pending.pop(token, None)
         if entry is None:
@@ -70,7 +65,7 @@ class ConfirmationGate:
         return entry
 
     def list_pending(self) -> list[dict]:
-        """Non-expired pending entries (for the frontend confirm panel)."""
+        """返回未过期的待确认条目（供前端确认面板使用）。"""
         with self._lock:
             self._evict_expired_locked()
             return [
@@ -94,7 +89,7 @@ _gate: Optional[ConfirmationGate] = None
 
 
 def get_confirmation_gate() -> ConfirmationGate:
-    """Process-wide singleton confirmation gate."""
+    """进程级单例确认门控。"""
     global _gate
     if _gate is None:
         _gate = ConfirmationGate()

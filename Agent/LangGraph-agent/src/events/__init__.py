@@ -1,4 +1,4 @@
-"""Event-driven module [v7.1]."""
+"""事件驱动模块 [v7.1]。"""
 
 from .listener import EventListener, get_event_listener
 

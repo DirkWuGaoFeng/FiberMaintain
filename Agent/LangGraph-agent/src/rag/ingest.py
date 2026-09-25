@@ -1,11 +1,11 @@
 """
-Knowledge base ingestion [v7.1]: load documents into ChromaDB vector store.
+知识库摄入 [v7.1]：将文档加载到 ChromaDB 向量存储。
 
-Features:
-- Chinese/English term annotations (TERM_ANNOTATIONS)
-- RecursiveCharacterTextSplitter (chunk_size=500, overlap=50)
-- Support Markdown/TXT/PDF ingestion
-- Category inference from filename
+特性：
+- 中英文术语对照标注（TERM_ANNOTATIONS）
+- RecursiveCharacterTextSplitter（chunk_size=500, overlap=50）
+- 支持 Markdown/TXT/PDF 摄入
+- 根据文件名推断分类
 """
 
 from __future__ import annotations
@@ -40,9 +40,9 @@ TERM_ANNOTATIONS: dict[str, str] = {
 
 
 def annotate_terms(text: str) -> str:
-    """Add Chinese annotations to English technical terms."""
+    """为英文技术术语添加中文注解。"""
     for term, annotated in TERM_ANNOTATIONS.items():
-        # Only annotate first occurrence to avoid clutter
+        # 仅标注首次出现以避免杂乱
         if term in text and annotated not in text:
             text = text.replace(term, annotated, 1)
     return text
@@ -50,17 +50,18 @@ def annotate_terms(text: str) -> str:
 
 def ingest_knowledge_base(kb_dir: str = "", persist_dir: str = "") -> int:
     """
-    Ingest knowledge base documents into ChromaDB.
+    将知识库文档摄入到 ChromaDB。
 
-    Args:
-        kb_dir: Knowledge base directory (default: knowledge_base/)
-        persist_dir: ChromaDB persist directory
+    参数：
+        kb_dir: 知识库目录（默认：knowledge_base/）
+        persist_dir: ChromaDB 持久化目录
 
-    Returns:
-        Number of documents ingested
+    返回：
+        摄入的文档数量
     """
     from langchain_chroma import Chroma
     from langchain_core.documents import Document
+
     from ..llm.provider import get_embedding_model
 
     kb_dir = kb_dir or os.path.join(os.path.dirname(__file__), "..", "..", "knowledge_base")
@@ -82,17 +83,19 @@ def ingest_knowledge_base(kb_dir: str = "", persist_dir: str = "") -> int:
                     with open(filepath, "r", encoding="utf-8") as f:
                         content = f.read()
                     category = _infer_category(filename)
-                    # Split large documents into chunks
+                    # 将大文档拆分为块
                     chunks = _chunk_document(content, chunk_size=500, overlap=50)
                     for i, chunk in enumerate(chunks):
-                        docs.append(Document(
-                            page_content=chunk,
-                            metadata={
-                                "source": filename,
-                                "category": category,
-                                "chunk_index": i,
-                            },
-                        ))
+                        docs.append(
+                            Document(
+                                page_content=chunk,
+                                metadata={
+                                    "source": filename,
+                                    "category": category,
+                                    "chunk_index": i,
+                                },
+                            )
+                        )
                 except Exception as e:
                     logger.warning(f"[Ingest] Failed to load {filename}: {e}")
 
@@ -106,7 +109,7 @@ def ingest_knowledge_base(kb_dir: str = "", persist_dir: str = "") -> int:
 
 
 def _chunk_document(content: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
-    """Split a document into overlapping chunks."""
+    """将文档拆分为重叠的分块。"""
     if len(content) <= chunk_size:
         return [content]
 
@@ -121,7 +124,7 @@ def _chunk_document(content: str, chunk_size: int = 500, overlap: int = 50) -> l
 
 
 def _infer_category(filename: str) -> str:
-    """Infer knowledge category from filename."""
+    """根据文件名推断知识类别。"""
     name = filename.lower()
     if "device" in name or "board" in name:
         return "device_manual"

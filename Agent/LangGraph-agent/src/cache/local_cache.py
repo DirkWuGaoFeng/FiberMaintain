@@ -1,15 +1,15 @@
 """
-Local Cache — SQLite-based with TTL [v7.1].
+本地缓存 — 基于 SQLite 并支持 TTL [v7.1]。
 
-Features:
-- aiosqlite for async operations
-- TTL-based expiration (default 5min)
-- get_with_staleness() for L4 degradation (serve stale data)
-- Stats tracking (hit/miss ratio)
+特性：
+- 使用 aiosqlite 进行异步操作
+- 基于 TTL 的过期机制（默认 5 分钟）
+- 提供 get_with_staleness() 用于 L4 降级（在后台不可用时返回陈旧数据）
+- 统计跟踪（命中/未命中率）
 
-Used by:
-- Event router (stats_update caching)
-- Degradation manager (L4 offline mode)
+使用方：
+- 事件路由器（stats_update 缓存）
+- 降级管理器（L4 离线模式）
 - internal_tools.cache_query
 """
 
@@ -27,9 +27,9 @@ logger = logging.getLogger(__name__)
 
 class LocalCache:
     """
-    SQLite-backed local cache with TTL support.
+    基于 SQLite 的本地缓存，支持 TTL。
 
-    Provides L4 degradation capability: serve stale data when backend is down.
+    提供 L4 降级能力：当后端不可用时返回陈旧数据。
     """
 
     def __init__(self, db_path: str = ""):
@@ -39,7 +39,7 @@ class LocalCache:
         self._misses = 0
 
     async def initialize(self) -> None:
-        """Initialize the cache database."""
+        """初始化缓存数据库。"""
         try:
             import aiosqlite
 
@@ -60,14 +60,12 @@ class LocalCache:
             logger.error(f"[LocalCache] Init failed: {e}")
 
     async def get(self, key: str) -> Optional[Any]:
-        """Get a cache value (returns None if expired or missing)."""
+        """获取缓存值（已过期或不存在时返回 None）。"""
         if not self._db:
             return None
 
         try:
-            cursor = await self._db.execute(
-                "SELECT value, created_at, ttl FROM cache WHERE key = ?", (key,)
-            )
+            cursor = await self._db.execute("SELECT value, created_at, ttl FROM cache WHERE key = ?", (key,))
             row = await cursor.fetchone()
             if not row:
                 self._misses += 1
@@ -75,7 +73,7 @@ class LocalCache:
 
             value_str, created_at, ttl = row
             if time.time() - created_at > ttl:
-                # Expired
+                # 已过期
                 self._misses += 1
                 await self._db.execute("DELETE FROM cache WHERE key = ?", (key,))
                 await self._db.commit()
@@ -90,18 +88,16 @@ class LocalCache:
 
     async def get_with_staleness(self, key: str, max_stale_seconds: int = 600) -> Optional[dict]:
         """
-        Get value with staleness info (for L4 degradation).
+        获取带过期状态的值（用于 L4 降级）。
 
-        Returns:
-            {"value": Any, "stale": bool, "age_seconds": float} or None
+        返回值：
+            {"value": Any, "stale": bool, "age_seconds": float} 或 None
         """
         if not self._db:
             return None
 
         try:
-            cursor = await self._db.execute(
-                "SELECT value, created_at, ttl FROM cache WHERE key = ?", (key,)
-            )
+            cursor = await self._db.execute("SELECT value, created_at, ttl FROM cache WHERE key = ?", (key,))
             row = await cursor.fetchone()
             if not row:
                 return None
@@ -110,7 +106,7 @@ class LocalCache:
             age = time.time() - created_at
             is_stale = age > ttl
 
-            # Don't serve data older than max_stale_seconds
+            # 不返回超过 max_stale_seconds 的旧数据
             if age > max_stale_seconds:
                 return None
 
@@ -123,7 +119,7 @@ class LocalCache:
             return None
 
     async def set(self, key: str, value: Any, ttl: int = 0) -> None:
-        """Set a cache value with TTL."""
+        """写入缓存值并指定 TTL。"""
         if not self._db:
             return
 
@@ -138,7 +134,7 @@ class LocalCache:
             logger.debug(f"[LocalCache] Set error: {e}")
 
     async def delete(self, key: str) -> None:
-        """Delete a cache entry."""
+        """删除一条缓存记录。"""
         if not self._db:
             return
         try:
@@ -148,21 +144,19 @@ class LocalCache:
             pass
 
     async def cleanup_expired(self) -> int:
-        """Remove all expired entries. Returns count removed."""
+        """删除所有已过期的记录。返回删除数量。"""
         if not self._db:
             return 0
         try:
             now = time.time()
-            cursor = await self._db.execute(
-                "DELETE FROM cache WHERE (? - created_at) > ttl", (now,)
-            )
+            cursor = await self._db.execute("DELETE FROM cache WHERE (? - created_at) > ttl", (now,))
             await self._db.commit()
             return cursor.rowcount
         except Exception:
             return 0
 
     async def get_stats(self) -> dict:
-        """Get cache statistics."""
+        """获取缓存统计信息。"""
         total = self._hits + self._misses
         return {
             "hits": self._hits,
@@ -172,7 +166,7 @@ class LocalCache:
         }
 
     async def query_keys(self, pattern: str = "%") -> list[dict]:
-        """Query cache keys matching a pattern."""
+        """按模式查询缓存键。"""
         if not self._db:
             return []
         try:
@@ -190,26 +184,26 @@ class LocalCache:
             return []
 
     async def close(self) -> None:
-        """Close the database connection."""
+        """关闭数据库连接。"""
         if self._db:
             await self._db.close()
             self._db = None
 
 
 # =============================================================================
-# Singleton
+# 单例
 # =============================================================================
 
 _cache_instance: Optional[LocalCache] = None
 
 
 def get_local_cache() -> Optional[LocalCache]:
-    """Get the local cache singleton (may be None if not initialized)."""
+    """获取本地缓存单例（未初始化时可能为 None）。"""
     return _cache_instance
 
 
 async def create_local_cache() -> LocalCache:
-    """Create and initialize the local cache singleton."""
+    """创建并初始化本地缓存单例。"""
     global _cache_instance
     if _cache_instance is None:
         _cache_instance = LocalCache()

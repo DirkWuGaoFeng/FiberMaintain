@@ -1,23 +1,22 @@
 """
-Observability: LangFuse Tracing integration [v7.1].
+可观测性：LangFuse 追踪集成 [v7.1]。
 
-Provides the "Tracing" pillar of the three-pillar observability model:
-  - Tracing (LangFuse): full conversation trace (intent → params → tools → loop → output)
-  - Metrics (Prometheus): see metrics.py
-  - Audit (JSONL): see audit.py
+提供三支柱可观测性模型中的 "Tracing（追踪）" 支柱：
+  - 追踪（LangFuse）：完整会话 trace（意图 → 参数 → 工具 → 循环 → 输出）
+  - 指标（Prometheus）：参见 metrics.py
+  - 审计（JSONL）：参见 audit.py
 
-LangFuse is activated only when LANGFUSE_PUBLIC_KEY is set in environment.
-When unavailable, this module is a no-op (zero overhead).
+仅当环境中设置了 LANGFUSE_PUBLIC_KEY 时才启用 LangFuse。
+当其不可用时，本模块为空操作（零开销）。
 
-Usage:
+用法：
     from src.observability.tracing import get_langfuse_handler
-    handler = get_langfuse_handler()  # None if not configured
+    handler = get_langfuse_handler()  # 未配置时返回 None
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from ..config import LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
 
@@ -29,11 +28,11 @@ _init_attempted = False
 
 def get_langfuse_handler():
     """
-    Get the LangFuse callback handler for LangChain/LangGraph tracing.
+    获取用于 LangChain/LangGraph 追踪的 LangFuse 回调处理器。
 
     Returns:
-        CallbackHandler instance if LangFuse is configured and available,
-        None otherwise (graceful degradation).
+        LangFuse 已配置且可用时返回 CallbackHandler 实例，
+        否则返回 None（优雅降级）。
     """
     global _handler_instance, _init_attempted
 
@@ -42,7 +41,7 @@ def get_langfuse_handler():
 
     _init_attempted = True
 
-    # Skip if not configured
+    # 未配置则跳过
     if not LANGFUSE_PUBLIC_KEY or not LANGFUSE_SECRET_KEY:
         logger.debug("[Tracing] LangFuse not configured, skipping")
         return None
@@ -59,10 +58,7 @@ def get_langfuse_handler():
         return _handler_instance
 
     except ImportError:
-        logger.warning(
-            "[Tracing] langfuse package not installed. "
-            "Install with: pip install langfuse"
-        )
+        logger.warning("[Tracing] langfuse package not installed. " "Install with: pip install langfuse")
         return None
     except Exception as e:
         logger.warning(f"[Tracing] LangFuse init failed: {e}")
@@ -70,5 +66,5 @@ def get_langfuse_handler():
 
 
 def is_tracing_enabled() -> bool:
-    """Check if LangFuse tracing is active."""
+    """检查 LangFuse 追踪是否已启用。"""
     return get_langfuse_handler() is not None

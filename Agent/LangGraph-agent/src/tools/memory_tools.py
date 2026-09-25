@@ -1,8 +1,8 @@
 """
-Memory tools: long-term memory save and query via SQLite.
+记忆工具集 —— 通过 SQLite 实现长期记忆的保存与查询。
 
-These tools are used by analysis_expert and knowledge_assistant sub-graphs.
-Only writes when color changes (to minimize storage).
+这些工具由 analysis_expert 和 knowledge_assistant 子图使用。
+仅在颜色变化时才写入（以最小化存储占用）。
 """
 
 from __future__ import annotations
@@ -15,12 +15,12 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# Lazy-initialized memory store
+# 延迟初始化的记忆存储
 _memory_store = None
 
 
 def init_memory_tools(store) -> None:
-    """Initialize memory tools with the shared MemoryStore instance."""
+    """使用共享的 MemoryStore 实例初始化记忆工具。"""
     global _memory_store
     _memory_store = store
 
@@ -39,8 +39,8 @@ class MemoryQueryInput(BaseModel):
 
 @tool(args_schema=MemorySaveInput)
 async def memory_save(fiber_id: str, spanloss: float, color: str, summary: str) -> str:
-    """Save fiber metric snapshot to long-term memory (only writes when color changes).
-    Returns: confirmation message."""
+    """将光纤指标快照保存到长期记忆（仅在颜色变化时写入）。
+    返回：确认消息。"""
     if _memory_store is None:
         return "Memory store not initialized"
 
@@ -58,8 +58,8 @@ async def memory_save(fiber_id: str, spanloss: float, color: str, summary: str) 
 
 @tool(args_schema=MemoryQueryInput)
 async def memory_query(fiber_id: str, days: int = 30) -> str:
-    """Query fiber historical metric snapshots.
-    Returns: JSON array of historical records."""
+    """查询光纤历史指标快照。
+    返回：历史记录的 JSON 数组。"""
     if _memory_store is None:
         return json.dumps({"error": "Memory store not initialized", "records": []})
 

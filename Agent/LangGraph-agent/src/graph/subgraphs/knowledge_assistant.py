@@ -1,17 +1,17 @@
 """
-Knowledge Assistant Node — RAG retrieval + LLM answer [v7.1].
+知识问答节点 — RAG 检索 + LLM 答案生成 [v7.1]。
 
-Flow: Query Rewrite (optional) → Hybrid Retrieve → LLM Generate (7b)
+流程：查询改写（可选）→ 混合检索 → LLM 生成（7b）
 
-Receives from MainGraphState:
-- user_input: the knowledge question
-- rag_context: pre-retrieved context (if any)
+从 MainGraphState 接收：
+- user_input: 知识问题
+- rag_context: 预先检索的上下文（如有）
 
-Returns:
-- final_output: knowledge answer
-- messages: AIMessage with answer
-- rag_context: retrieved chunks
-- llm_call_count: incremented
+返回：
+- final_output: 知识问答结果
+- messages: 携带答案的 AIMessage
+- rag_context: 检索到的知识片段
+- llm_call_count: 自增
 """
 
 from __future__ import annotations
@@ -21,34 +21,41 @@ import logging
 from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 
-from ...graph.state import MainGraphState
 from ...llm.provider import get_knowledge_llm
 
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# Knowledge QA Prompt
+# 知识问答提示词
 # =============================================================================
 
-KNOWLEDGE_QA_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """你是光纤维护知识库助手。根据提供的知识库内容回答用户问题。
+KNOWLEDGE_QA_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """你是光纤维护知识库助手。根据提供的知识库内容回答用户问题。
 
 ## 规则
 1. 仅基于提供的知识库内容回答，不得编造
 2. 如果知识库中没有相关信息，明确告知用户
 3. 引用具体的知识点来源
 4. 语言简洁专业，适合运维人员阅读
-5. 涉及操作步骤时，给出清晰的步骤列表"""),
-    ("human", """## 知识库参考内容
+5. 涉及操作步骤时，给出清晰的步骤列表""",
+        ),
+        (
+            "human",
+            """## 知识库参考内容
 {rag_context}
 
 ## 用户问题
 {question}
 
-请基于知识库内容回答。如果知识库中没有相关信息，请明确说明。"""),
-])
+请基于知识库内容回答。如果知识库中没有相关信息，请明确说明。""",
+        ),
+    ]
+)
 
-# Fallback answer when no context and no LLM
+# Fallback：无知识库内容且无 LLM 时的回答
 _NO_KNOWLEDGE_MSG = (
     "抱歉，当前知识库中未找到与您问题相关的内容。\n"
     "建议您：\n"
@@ -60,9 +67,9 @@ _NO_KNOWLEDGE_MSG = (
 
 async def _retrieve_knowledge(query: str) -> list[str]:
     """
-    Attempt RAG retrieval from knowledge engine.
+    从知识引擎尝试 RAG 检索。
 
-    Returns list of relevant text chunks. Empty list if RAG unavailable.
+    返回相关文本片段列表。若 RAG 不可用则返回空列表。
     """
     try:
         from ...rag.engine import get_rag_engine
@@ -83,14 +90,14 @@ async def _retrieve_knowledge(query: str) -> list[str]:
 
 async def knowledge_assistant_subgraph(state: dict) -> dict:
     """
-    Knowledge QA node: RAG retrieval + LLM answer generation.
+    知识问答节点：RAG 检索 + LLM 答案生成。
 
-    Uses qwen2.5:7b (Secondary) for answer generation.
-    Falls back gracefully when RAG or LLM unavailable.
+    使用 qwen2.5:7b（次级）进行答案生成。
+    RAG 或 LLM 不可用时优雅降级。
     """
     user_input = state.get("user_input", "")
     if not user_input:
-        # Try to extract from messages
+        # 尝试从消息中提取
         messages = state.get("messages", [])
         if messages:
             last_msg = messages[-1]
@@ -98,17 +105,17 @@ async def knowledge_assistant_subgraph(state: dict) -> dict:
 
     logger.info(f"[KnowledgeQA] Processing question: {user_input[:80]}")
 
-    # Step 1: Retrieve knowledge context
+    # Step 1：检索知识上下文
     rag_context = state.get("rag_context", [])
     if not rag_context:
         rag_context = await _retrieve_knowledge(user_input)
 
-    # Step 2: Generate answer
+    # Step 2：生成答案
     if not rag_context:
-        # No knowledge found — still try LLM for general answer
+        # 未检索到知识内容——仍尝试让 LLM 给出通用回答
         context_text = "（知识库中未找到相关内容）"
     else:
-        # Join top chunks
+        # 拼接最相关片段
         context_text = "\n\n---\n\n".join(rag_context[:5])
         if len(context_text) > 3000:
             context_text = context_text[:3000] + "\n...(已截断)"
@@ -117,14 +124,16 @@ async def knowledge_assistant_subgraph(state: dict) -> dict:
         llm = get_knowledge_llm()
         chain = KNOWLEDGE_QA_PROMPT | llm
 
-        result = await chain.ainvoke({
-            "rag_context": context_text,
-            "question": user_input,
-        })
+        result = await chain.ainvoke(
+            {
+                "rag_context": context_text,
+                "question": user_input,
+            }
+        )
 
         answer = result.content if hasattr(result, "content") else str(result)
 
-        # If no RAG context and answer seems generic, add disclaimer
+        # 若无 RAG 上下文且回答较泛化，补充免责声明
         if not rag_context and "未找到" not in answer:
             answer += "\n\n⚠️ 注意：以上回答未基于知识库，仅供参考。"
 
@@ -136,18 +145,20 @@ async def knowledge_assistant_subgraph(state: dict) -> dict:
             "rag_context": rag_context,
             "llm_call_count": state.get("llm_call_count", 0) + 1,
             "processing_path": "normal",
-            "audit_trail": [{
-                "node": "knowledge_qa",
-                "action": "rag_answer",
-                "chunks_used": len(rag_context),
-                "answer_length": len(answer),
-            }],
+            "audit_trail": [
+                {
+                    "node": "knowledge_qa",
+                    "action": "rag_answer",
+                    "chunks_used": len(rag_context),
+                    "answer_length": len(answer),
+                }
+            ],
         }
 
     except Exception as e:
         logger.error(f"[KnowledgeQA] LLM generation failed: {e}")
 
-        # L3 degradation: no LLM, return retrieval results directly
+        # L3 降级：无 LLM，直接返回检索结果
         if rag_context:
             fallback = f"📚 知识库检索结果（LLM 服务暂不可用）：\n\n{rag_context[0][:500]}"
         else:
@@ -158,9 +169,11 @@ async def knowledge_assistant_subgraph(state: dict) -> dict:
             "final_output": fallback,
             "rag_context": rag_context,
             "processing_path": "degraded",
-            "audit_trail": [{
-                "node": "knowledge_qa",
-                "action": "error_fallback",
-                "error": str(e),
-            }],
+            "audit_trail": [
+                {
+                    "node": "knowledge_qa",
+                    "action": "error_fallback",
+                    "error": str(e),
+                }
+            ],
         }

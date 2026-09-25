@@ -1,11 +1,12 @@
 """
-v8 韧性层 — 分层超时 + LLM Circuit Breaker.
+v8 韧性层 — 分层超时与 LLM 熔断器。
 
 设计原则：
 - 每层 Agent 有独立 SLA（超时后走降级路径）
 - LLM 调用有全局熔断器（连续失败 → 熔断 → 期间所有 LLM 走规则/模板）
 - 复用 v7.1 CircuitBreaker 三态模型（CLOSED → OPEN → HALF_OPEN）
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,19 +26,19 @@ logger = logging.getLogger(__name__)
 class AgentTimeout:
     """每层 Agent 的超时 SLA（秒）."""
 
-    # Collection Agent
+    # 采集 Agent
     COLLECTION_DETERMINISTIC: float = 5.0
     COLLECTION_REACT: float = 20.0
 
-    # Analysis Agent
+    # 分析 Agent
     ANALYSIS_RULE: float = 1.0
     ANALYSIS_LLM: float = 15.0
 
-    # Expression Agent
+    # 表达 Agent
     EXPRESSION_TEMPLATE: float = 2.0
     EXPRESSION_LLM: float = 10.0
 
-    # LeadRouter
+    # LeadRouter 路由
     ROUTER_LLM: float = 5.0
 
     @classmethod
@@ -60,7 +61,7 @@ class AgentTimeout:
 
 
 # =============================================================================
-# LLM Circuit Breaker
+# LLM 熔断器
 # =============================================================================
 
 
@@ -101,9 +102,7 @@ class LLMCircuitBreaker:
             return True
         if self.state == BreakerState.OPEN:
             # 检查 cooldown 是否已过
-            if self._opened_at and (
-                time.monotonic() - self._opened_at >= self.cooldown_seconds
-            ):
+            if self._opened_at and (time.monotonic() - self._opened_at >= self.cooldown_seconds):
                 return True  # 将转为 HALF_OPEN
             return False
         return True  # HALF_OPEN 允许探测
@@ -114,19 +113,11 @@ class LLMCircuitBreaker:
             if self.state == BreakerState.CLOSED:
                 return
             if self.state == BreakerState.OPEN:
-                if (
-                    self._opened_at
-                    and time.monotonic() - self._opened_at >= self.cooldown_seconds
-                ):
+                if self._opened_at and time.monotonic() - self._opened_at >= self.cooldown_seconds:
                     self.state = BreakerState.HALF_OPEN
-                    logger.info(
-                        f"[CircuitBreaker:{self.name}] OPEN -> HALF_OPEN"
-                    )
+                    logger.info(f"[CircuitBreaker:{self.name}] OPEN -> HALF_OPEN")
                     return
-                raise CircuitOpenError(
-                    f"LLM circuit breaker '{self.name}' OPEN, "
-                    f"cooldown {self.cooldown_seconds}s"
-                )
+                raise CircuitOpenError(f"LLM circuit breaker '{self.name}' OPEN, " f"cooldown {self.cooldown_seconds}s")
             # HALF_OPEN: 允许探测
 
     async def record_success(self) -> None:
@@ -135,9 +126,7 @@ class LLMCircuitBreaker:
             if self.state == BreakerState.HALF_OPEN:
                 self.state = BreakerState.CLOSED
                 self.failure_count = 0
-                logger.info(
-                    f"[CircuitBreaker:{self.name}] HALF_OPEN -> CLOSED"
-                )
+                logger.info(f"[CircuitBreaker:{self.name}] HALF_OPEN -> CLOSED")
             elif self.state == BreakerState.CLOSED:
                 self.failure_count = max(0, self.failure_count - 1)
 
@@ -148,17 +137,12 @@ class LLMCircuitBreaker:
             if self.state == BreakerState.HALF_OPEN:
                 self.state = BreakerState.OPEN
                 self._opened_at = time.monotonic()
-                logger.warning(
-                    f"[CircuitBreaker:{self.name}] HALF_OPEN -> OPEN"
-                )
+                logger.warning(f"[CircuitBreaker:{self.name}] HALF_OPEN -> OPEN")
             elif self.state == BreakerState.CLOSED:
                 if self.failure_count >= self.failure_threshold:
                     self.state = BreakerState.OPEN
                     self._opened_at = time.monotonic()
-                    logger.warning(
-                        f"[CircuitBreaker:{self.name}] CLOSED -> OPEN "
-                        f"(failures={self.failure_count})"
-                    )
+                    logger.warning(f"[CircuitBreaker:{self.name}] CLOSED -> OPEN " f"(failures={self.failure_count})")
 
     def get_status(self) -> dict[str, Any]:
         """获取熔断器状态（供 /metrics 端点）."""

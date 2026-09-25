@@ -1,9 +1,9 @@
 """
-Audit Logger [v7.1].
+审计日志 [v7.1]。
 
-Local JSON Lines audit log (data/audit.jsonl).
-Records: request_id, user_input, processing_path, api_calls, output, latency_ms, degradation_level.
-Retention: 180 days (configurable via AUDIT_RETENTION_DAYS).
+本地 JSON Lines 审计日志（data/audit.jsonl）。
+记录字段：request_id、user_input、processing_path、api_calls、output、latency_ms、degradation_level。
+保留期限：180 天（可通过 AUDIT_RETENTION_DAYS 配置）。
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from ..config import AUDIT_LOG_PATH, AUDIT_RETENTION_DAYS
 
@@ -22,18 +22,18 @@ logger = logging.getLogger(__name__)
 
 async def write_audit_record(record: dict) -> None:
     """
-    Write a single audit record to the JSONL file.
+    将单条审计记录写入 JSONL 文件。
 
     Args:
-        record: Dict with audit fields. Common fields:
+        record: 包含审计字段的字典。常见字段：
             - request_id: str
             - user_input: str
             - processing_path: str (fast/normal/heavy/degraded/blocked)
             - api_calls: list[str]
-            - output: str (truncated)
+            - output: str（已截断）
             - latency_ms: int
             - degradation_level: int
-            - type: str (optional, for system events)
+            - type: str（可选，用于系统事件）
     """
     try:
         record.setdefault("timestamp", datetime.now().isoformat())
@@ -61,30 +61,32 @@ async def write_request_audit(
     loop_count: int = 0,
 ) -> None:
     """
-    Write a standard request audit record.
+    写入一条标准的请求审计记录。
 
-    This is the primary audit function called at the end of each request.
+    这是每次请求结束时调用的主要审计函数。
     """
-    await write_audit_record({
-        "type": "request",
-        "request_id": request_id,
-        "user_input": user_input[:200],  # Truncate for privacy
-        "processing_path": processing_path,
-        "output": output[:300] if output else "",
-        "latency_ms": latency_ms,
-        "degradation_level": degradation_level,
-        "api_calls": api_calls or [],
-        "rule_match": rule_match,
-        "loop_count": loop_count,
-    })
+    await write_audit_record(
+        {
+            "type": "request",
+            "request_id": request_id,
+            "user_input": user_input[:200],  # 出于隐私考虑进行截断
+            "processing_path": processing_path,
+            "output": output[:300] if output else "",
+            "latency_ms": latency_ms,
+            "degradation_level": degradation_level,
+            "api_calls": api_calls or [],
+            "rule_match": rule_match,
+            "loop_count": loop_count,
+        }
+    )
 
 
 async def cleanup_old_records() -> int:
     """
-    Remove audit records older than AUDIT_RETENTION_DAYS.
+    移除早于 AUDIT_RETENTION_DAYS 的审计记录。
 
     Returns:
-        Number of lines removed.
+        被移除的行数。
     """
     path = Path(AUDIT_LOG_PATH)
     if not path.exists():

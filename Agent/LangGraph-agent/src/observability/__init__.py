@@ -1,4 +1,4 @@
-"""Observability module [v7.2]: metrics + audit + tracing (three pillars) + full-chain tracer."""
+"""可观测性模块 [v7.2]：指标 + 审计 + 追踪（三大支柱）+ 全链路追踪。"""
 
 from .audit import write_audit_record
 from .metrics import metrics

@@ -1,4 +1,4 @@
-"""Security module [v7.1]."""
+"""安全模块 [v7.1]。"""
 
 from .output_filter import OutputFilter
 

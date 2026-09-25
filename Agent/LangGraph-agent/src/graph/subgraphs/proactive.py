@@ -1,11 +1,11 @@
 """
-Proactive Diagnosis Sub-graph [v7.1].
+主动诊断子图 [v7.1]。
 
-Event-triggered automatic diagnosis (no user interaction):
+事件触发的自动诊断（无需用户交互）：
   EventTrigger → QuickCollect → AutoAnalyze → Alert
 
-Timeout: 10s total. Fully automatic.
-Triggered by: CRITICAL alarm, GREEN→RED color change.
+总超时：10s。全自动执行。
+触发条件：CRITICAL 告警、GREEN→RED 颜色变化。
 """
 
 from __future__ import annotations
@@ -18,19 +18,19 @@ from ...config import SPANLOSS_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
-PROACTIVE_TIMEOUT = 10.0  # seconds
+PROACTIVE_TIMEOUT = 10.0  # 秒
 
 
 async def run_proactive_diagnosis(event: dict, reason: str = "") -> dict:
     """
-    Run proactive diagnosis for an event.
+    针对事件执行主动诊断。
 
     Args:
-        event: The triggering event dict
-        reason: Why this was triggered (critical_alarm / color_escalation)
+        event: 触发事件字典
+        reason: 触发原因（critical_alarm / color_escalation）
 
     Returns:
-        Diagnosis result dict
+        诊断结果字典
     """
     start_time = time.time()
     fiber_id = event.get("fiber_id")
@@ -47,7 +47,7 @@ async def run_proactive_diagnosis(event: dict, reason: str = "") -> dict:
     }
 
     try:
-        # Wrap with timeout
+        # 超时保护
         diagnosis = await asyncio.wait_for(
             _diagnose(fiber_id, event),
             timeout=PROACTIVE_TIMEOUT,
@@ -64,7 +64,7 @@ async def run_proactive_diagnosis(event: dict, reason: str = "") -> dict:
 
     result["duration_ms"] = int((time.time() - start_time) * 1000)
 
-    # Generate alert message if critical
+    # 若为严重状态，生成告警消息
     if result["status"] == "CRITICAL":
         result["alert_message"] = (
             f"⚠️ 主动诊断告警：光纤 {fiber_id} 检测到严重异常！\n"
@@ -77,19 +77,20 @@ async def run_proactive_diagnosis(event: dict, reason: str = "") -> dict:
 
 
 async def _diagnose(fiber_id: int | None, event: dict) -> dict:
-    """Internal diagnosis logic: QuickCollect → AutoAnalyze."""
+    """内部诊断逻辑：QuickCollect → AutoAnalyze。"""
     findings = []
     status = "NORMAL"
 
     if not fiber_id:
         return {"status": "ERROR", "findings": ["事件中缺少 fiber_id"]}
 
-    # QuickCollect: get performance + spanloss
+    # QuickCollect：获取性能 + 衰耗数据
     from ...tools._http_client import fiber_http_client
 
     try:
         perf_raw = await fiber_http_client.get(f"/api/v1/fibers/{fiber_id}/performance", timeout=3.0)
         import json
+
         perf = json.loads(perf_raw)
 
         oop = perf.get("src_oop")
@@ -104,6 +105,7 @@ async def _diagnose(fiber_id: int | None, event: dict) -> dict:
     try:
         span_raw = await fiber_http_client.get(f"/api/v1/fibers/{fiber_id}/spanloss", timeout=3.0)
         import json
+
         span = json.loads(span_raw)
         spanloss = span.get("spanloss")
         if spanloss is not None:
@@ -116,7 +118,7 @@ async def _diagnose(fiber_id: int | None, event: dict) -> dict:
     except Exception as e:
         findings.append(f"衰耗查询失败: {e}")
 
-    # AutoAnalyze: simple threshold-based (zero LLM for speed)
+    # 自动分析：基于简单阈值（为速度零 LLM 调用）
     if not findings:
         findings.append("无法获取诊断数据")
         status = "WARNING"
