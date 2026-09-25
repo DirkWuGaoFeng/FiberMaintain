@@ -11,7 +11,7 @@ const MAX_RECENT_ALARMS = 50
 const ALARM_POLL_INTERVAL = 30000
 
 export const useAlarmStore = defineStore('alarm', () => {
-  // ===== State =====
+  // ===== 状态 =====
   /** 后端查询到的活跃告警 */
   const alarms = ref<AlarmRecord[]>([])
   /** WebSocket 推送的最近告警事件流 */
@@ -21,7 +21,7 @@ export const useAlarmStore = defineStore('alarm', () => {
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
-  // ===== Getters =====
+  // ===== 计算属性 =====
   const summary = computed<AlarmSummary>(() => {
     // 合并 REST 查询结果与 WS 事件流进行统计
     let critical = 0
@@ -56,7 +56,7 @@ export const useAlarmStore = defineStore('alarm', () => {
     return [...wsItems, ...alarms.value].slice(0, 20)
   })
 
-  // ===== Actions =====
+  // ===== 动作 =====
 
   /** 从后端查询当前活跃告警 */
   async function fetchCurrentAlarms(boardId?: number, portId?: number) {

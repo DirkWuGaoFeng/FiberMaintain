@@ -4,7 +4,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
 import { streamInvoke } from '@/api/sse'
-import type { StreamHandlers, ThinkingStep, ToolCallRecord } from '@/types/agent'
+import type { MemoryEvent, StreamHandlers, ThinkingStep, ToolCallRecord } from '@/types/agent'
 
 /** 消息类型 */
 export interface ChatMessage {
@@ -24,6 +24,8 @@ export interface ChatMessage {
   isClarification?: boolean
   /** 流式生成中 */
   streaming?: boolean
+  /** 用户历史记忆事件（双层记忆细节层召回）[v2.1] */
+  memoryEvents?: MemoryEvent[]
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -31,7 +33,7 @@ export const useChatStore = defineStore('chat', () => {
   const isStreaming = ref(false)
   const currentThreadId = ref(generateThreadId())
   const currentStreamContent = ref('')
-  /** 心跳状态：显示“仍在处理中... Xs” */
+  /** 心跳状态：显示"仍在处理中... Xs" */
   const heartbeatElapsedMs = ref(0)
 
   let abortController: AbortController | null = null
@@ -66,6 +68,7 @@ export const useChatStore = defineStore('chat', () => {
       timestamp: Date.now(),
       thinkingSteps: [],
       toolCalls: [],
+      memoryEvents: [],
       streaming: true,
     })
     messages.value.push(assistantMsg)
@@ -117,6 +120,10 @@ export const useChatStore = defineStore('chat', () => {
           currentStreamContent.value = output
           assistantMsg.content = output
         }
+      },
+      onMemoryEvents: (events) => {
+        // 记忆事件注入：展示"记住的关于你"（双层记忆细节层召回）
+        assistantMsg.memoryEvents = events
       },
       onComplete: () => {
         assistantMsg.streaming = false

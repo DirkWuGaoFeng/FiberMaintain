@@ -221,6 +221,7 @@ function dispatchEvent(event: RawSSEEvent, handlers: StreamHandlers): void {
       if (GRAPH_NODES.has(name)) {
         handlers.onNodeEnd?.(name, data)
         extractThinkingFromNodeOutput(name, data, handlers)
+        extractMemoryEventsFromNodeOutput(name, data, handlers)
       }
       break
     }
@@ -376,6 +377,28 @@ function extractThinkingFromNodeOutput(nodeId: string, data: Record<string, unkn
   }
 
   if (step) handlers.onThinking?.(step)
+}
+
+/**
+ * 从 result_aggregator 节点输出中提取用户记忆事件（双层记忆细节层）[v2.1]
+ *
+ * 后端 result_aggregator 注入偏好时，会按当前用户问题语义检索 user_event_log，
+ * 将相关历史事件放入 output.user_preferences.memory_events。此处将其
+ * 透传给 UI（MemoryEventCard 展示"记住的关于你"）。
+ */
+function extractMemoryEventsFromNodeOutput(
+  nodeId: string,
+  data: Record<string, unknown>,
+  handlers: StreamHandlers,
+): void {
+  if (nodeId !== 'result_aggregator' || !handlers.onMemoryEvents) return
+
+  const output = data.output as Record<string, unknown> | undefined
+  const prefs = output?.user_preferences as Record<string, unknown> | undefined
+  const events = prefs?.memory_events
+  if (Array.isArray(events) && events.length > 0) {
+    handlers.onMemoryEvents(events as unknown as import('@/types/agent').MemoryEvent[])
+  }
 }
 
 /** 从 LangChain message chunk 中提取 token 文本 */

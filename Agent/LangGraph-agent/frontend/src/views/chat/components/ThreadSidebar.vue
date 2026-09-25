@@ -111,7 +111,7 @@ watch(
 
 watch(
   () => chatStore.currentThreadId,
-  () => { /* keep sidebar reactive to thread changes */ },
+  () => { /* 保持侧栏对会话切换保持响应 */ },
 )
 
 async function handleDelete(threadId: string) {

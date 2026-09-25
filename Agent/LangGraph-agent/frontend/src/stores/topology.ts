@@ -31,7 +31,7 @@ const NE_MARGIN_X = 60
 const NE_MARGIN_Y = 50
 
 export const useTopologyStore = defineStore('topology', () => {
-  // ===== State =====
+  // ===== 状态 =====
   const fibers = ref<FiberInfo[]>([])
   const coloredFibers = ref<ColoredFiber[]>([])
   const stats = ref<FiberStatsRealtime | null>(null)
@@ -47,7 +47,7 @@ export const useTopologyStore = defineStore('topology', () => {
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
-  // ===== Getters =====
+  // ===== 计算属性 =====
   const redCount = computed(() => stats.value?.red_count ?? 0)
   const yellowCount = computed(() => stats.value?.yellow_count ?? 0)
   const greenCount = computed(() => stats.value?.green_count ?? 0)
@@ -200,7 +200,7 @@ export const useTopologyStore = defineStore('topology', () => {
     return map
   })
 
-  // ===== Actions =====
+  // ===== 动作 =====
 
   /** 获取全量连纤拓扑 */
   async function fetchAllFibers() {
@@ -341,7 +341,7 @@ export const useTopologyStore = defineStore('topology', () => {
   }
 
   return {
-    // state
+    // 状态
     fibers,
     coloredFibers,
     stats,
@@ -351,7 +351,7 @@ export const useTopologyStore = defineStore('topology', () => {
     lastStatsUpdate,
     viewMode,
     sceneDetails,
-    // getters
+    // 计算属性
     redCount,
     yellowCount,
     greenCount,
@@ -361,7 +361,7 @@ export const useTopologyStore = defineStore('topology', () => {
     topoEdges,
     neContainers,
     boardPosMap,
-    // actions
+    // 动作
     fetchAllFibers,
     fetchColoredFibers,
     fetchRealtimeStats,

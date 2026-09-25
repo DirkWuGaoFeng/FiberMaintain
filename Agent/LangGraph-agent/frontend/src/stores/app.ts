@@ -38,7 +38,7 @@ export const useAppStore = defineStore('app', () => {
     document.documentElement.classList.toggle('dark', isDark.value)
   }
 
-  // ===== WebSocket =====
+  // ===== WebSocket 连接 =====
   const wsState = ref<WsConnectionState>('disconnected')
   const wsConnected = computed(() => wsState.value === 'connected')
   const lastAlarm = ref<AlarmEvent | null>(null)
@@ -127,7 +127,7 @@ export const useAppStore = defineStore('app', () => {
     isDark,
     initTheme,
     toggleTheme,
-    // WebSocket
+    // WebSocket 连接
     wsState,
     wsConnected,
     lastAlarm,

@@ -129,7 +129,7 @@ async function loadState() {
   }
 }
 
-watch(() => props.selectedNode, () => { /* trigger reactivity */ })
+watch(() => props.selectedNode, () => { /* 触发响应式更新 */ })
 </script>
 
 <style scoped lang="scss">

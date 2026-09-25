@@ -6,12 +6,61 @@
         <h2 class="page-title">{{ $t('memory.title') }}</h2>
         <span class="page-desc">{{ $t('memory.description') }}</span>
       </div>
-      <el-button type="danger" plain size="small" @click="handleCleanup">
-        <el-icon><Delete /></el-icon> {{ $t('memory.cleanup') }}
-      </el-button>
+      <div class="header-actions">
+        <el-button type="warning" plain size="small" :loading="consolidating" @click="handleConsolidate">
+          <el-icon><Refresh /></el-icon> {{ $t('memory.consolidate') }}
+        </el-button>
+        <el-button type="danger" plain size="small" @click="handleCleanup">
+          <el-icon><Delete /></el-icon> {{ $t('memory.cleanup') }}
+        </el-button>
+      </div>
     </div>
 
     <div class="memory-content">
+      <!-- 会话后记忆提取面板（书籍 Ch3 双层记忆细节层） -->
+      <div class="extract-panel">
+        <div class="extract-title">
+          <el-icon color="var(--fa-primary)"><Memo /></el-icon>
+          {{ $t('memory.extract') }}
+          <span class="extract-desc">{{ $t('memory.extractDesc') }}</span>
+        </div>
+        <div class="extract-row">
+          <el-input
+            v-model="extractUserId"
+            :placeholder="$t('memory.extractUserId')"
+            class="user-id-input"
+            clearable
+          />
+          <el-input
+            v-model="extractConversation"
+            type="textarea"
+            :rows="2"
+            :placeholder="$t('memory.extractConversationPlaceholder')"
+            class="conv-input"
+          />
+          <el-button type="primary" :loading="extracting" :disabled="!canExtract" @click="handleExtract">
+            <el-icon><MagicStick /></el-icon> {{ $t('memory.extractRun') }}
+          </el-button>
+        </div>
+        <div v-if="extractResult" class="extract-result">
+          <el-tag size="small" type="success" effect="plain">
+            {{ $t('memory.extracted', { n: extractResult.extracted }) }}
+          </el-tag>
+          <el-tag size="small" type="info" effect="plain">
+            {{ $t('memory.verified', { n: extractResult.verified }) }}
+          </el-tag>
+          <el-tag size="small" type="warning" effect="plain">
+            {{ $t('memory.storedPrefs', { n: extractResult.stored_prefs }) }}
+          </el-tag>
+          <el-tag size="small" type="primary" effect="plain">
+            {{ $t('memory.storedEvents', { n: extractResult.stored_events }) }}
+          </el-tag>
+          <el-tag size="small" type="info" effect="plain">
+            {{ $t('memory.backfilled', { n: extractResult.backfilled_embeddings }) }}
+          </el-tag>
+        </div>
+      </div>
+
       <!-- 查询面板 -->
       <div class="query-panel">
         <div class="query-row">
@@ -114,12 +163,21 @@
 
 <script setup lang="ts">
 /**
- * 记忆管理页 — 光纤快照历史查询 + 趋势图 + 清理
+ * 记忆管理页 — 光纤快照历史 + 会话后记忆提取 + 经验整合 + 清理
  */
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { getSnapshots, getLatestSnapshot, cleanupMemory, type FiberSnapshot } from '@/api/memory'
+import {
+  getSnapshots,
+  getLatestSnapshot,
+  cleanupMemory,
+  consolidateMemory,
+  extractMemory,
+  type ConsolidationReport,
+  type ExtractMemoryResult,
+  type FiberSnapshot,
+} from '@/api/memory'
 import { useECharts } from '@/composables/useECharts'
 import type { EChartsOption } from 'echarts'
 
@@ -130,6 +188,55 @@ const days = ref(30)
 const loading = ref(false)
 const snapshots = ref<FiberSnapshot[]>([])
 const latestSnapshot = ref<FiberSnapshot | null>(null)
+
+// ===== 会话后记忆提取（书籍 Ch3 extract→verify→dedupe→store） =====
+const extractUserId = ref('')
+const extractConversation = ref('')
+const extracting = ref(false)
+const extractResult = ref<ExtractMemoryResult | null>(null)
+
+const canExtract = computed(
+  () => extractUserId.value.trim() !== '' && extractConversation.value.trim() !== '',
+)
+
+async function handleExtract() {
+  extracting.value = true
+  try {
+    const res = await extractMemory({
+      userId: extractUserId.value.trim(),
+      conversation: extractConversation.value.trim(),
+      maxCandidates: 5,
+    })
+    extractResult.value = res.result
+    ElMessage.success(t('memory.extractSuccess'))
+  } catch {
+    ElMessage.error(t('memory.extractFailed'))
+  } finally {
+    extracting.value = false
+  }
+}
+
+// ===== 经验整合（书籍 Ch3 离线整理阶段，去重合并/标记过期） =====
+const consolidating = ref(false)
+const consolidateReport = ref<ConsolidationReport | null>(null)
+
+async function handleConsolidate() {
+  consolidating.value = true
+  try {
+    const res = await consolidateMemory({ dry_run: false })
+    consolidateReport.value = res.report
+    ElMessage.success(
+      t('memory.consolidateResult', {
+        scanned: res.report.scanned,
+        merged: res.report.merged,
+      }),
+    )
+  } catch {
+    ElMessage.error(t('memory.consolidateFailed'))
+  } finally {
+    consolidating.value = false
+  }
+}
 
 // ===== 趋势图 =====
 const trendChartRef = ref<HTMLElement | null>(null)
@@ -258,6 +365,11 @@ function formatTime(iso: string): string {
       color: var(--fa-text-muted);
     }
   }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+  }
 }
 
 .memory-content {
@@ -266,6 +378,54 @@ function formatTime(iso: string): string {
   flex-direction: column;
   gap: 14px;
   min-height: 0;
+}
+
+.extract-panel {
+  border: 1px solid var(--fa-border-color);
+  border-radius: 10px;
+  background: var(--fa-bg-secondary);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  .extract-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--fa-text-secondary);
+
+    .extract-desc {
+      font-weight: 400;
+      font-size: 11px;
+      color: var(--fa-text-muted);
+      margin-left: 4px;
+    }
+  }
+
+  .extract-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+
+    .user-id-input {
+      width: 160px;
+    }
+
+    .conv-input {
+      flex: 1;
+      min-width: 220px;
+    }
+  }
+
+  .extract-result {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
 }
 
 .query-panel {

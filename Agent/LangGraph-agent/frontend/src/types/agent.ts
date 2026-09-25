@@ -112,6 +112,20 @@ export interface StreamHandlers {
   onHeartbeat?: (elapsedMs: number) => void
   /** 最终输出事件（快速路径/模板兖底时无 token 流，通过此事件传递结果） */
   onFinalOutput?: (output: string) => void
+  /** 记忆事件注入（result_aggregator 按当前问题召回的用户历史事件）[v2.1] */
+  onMemoryEvents?: (events: MemoryEvent[]) => void
+}
+
+/** 用户历史记忆事件（result_aggregator user_preferences.memory_events）[v2.1] */
+export interface MemoryEvent {
+  event_type: string
+  details: {
+    key?: string
+    value?: string
+    source?: string
+    confidence?: number
+  }
+  similarity?: number
 }
 
 /** 批量进度 */

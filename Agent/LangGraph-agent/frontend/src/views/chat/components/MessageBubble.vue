@@ -32,6 +32,9 @@
         <!-- 澄清提示 -->
         <ClarifyCard v-if="message.isClarification" :content="message.content" @reply="emitReply" />
 
+        <!-- 记忆事件注入（双层记忆细节层召回） -->
+        <MemoryEventCard v-if="message.memoryEvents && message.memoryEvents.length > 0" :events="message.memoryEvents" />
+
         <!-- 正文内容（Markdown 渲染） -->
         <div
           v-if="message.content && !message.isClarification"
@@ -63,6 +66,7 @@ import type { ChatMessage } from '@/stores/chat'
 import ThinkingPanel from './ThinkingPanel.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import ClarifyCard from './ClarifyCard.vue'
+import MemoryEventCard from './MemoryEventCard.vue'
 
 const props = defineProps<{ message: ChatMessage }>()
 const emit = defineEmits<{ reply: [text: string] }>()

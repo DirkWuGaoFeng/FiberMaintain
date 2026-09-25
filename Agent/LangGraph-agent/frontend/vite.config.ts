@@ -9,16 +9,16 @@ import { resolve } from 'path'
  * Vite 配置 — Fiber Agent Frontend v7.1
  *
  * 代理策略:
- *   /api/v1/knowledge|threads|graph|memory|metrics → Agent (FastAPI :8000)
+ *   /api/v1/knowledge|threads|graph|memory|metrics → Agent (FastAPI :8200)
  *   /api/v1/* (其余) → C++ 后端 API Gateway (:8080)
- *   /ws/v1 → Agent WebSocket (:8000)
- *   /fiber-agent, /invoke, /health, /metrics → Agent (FastAPI :8000)
+ *   /ws/v1 → Agent WebSocket (:8200)
+ *   /fiber-agent, /invoke, /health, /metrics → Agent (FastAPI :8200)
  */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd())
-  const agentUrl = env.VITE_AGENT_URL || 'http://localhost:8000'
-  const backendUrl = env.VITE_BACKEND_URL || 'http://localhost:8080'
-  const wsUrl = env.VITE_WS_URL || 'ws://localhost:8081'
+  const agentUrl = env.VITE_AGENT_URL || 'http://127.0.0.1:8200'
+  const backendUrl = env.VITE_BACKEND_URL || 'http://172.22.181.152:8080'
+  const wsUrl = env.VITE_WS_URL || 'ws://172.22.181.152:8081'
 
   return {
     plugins: [
