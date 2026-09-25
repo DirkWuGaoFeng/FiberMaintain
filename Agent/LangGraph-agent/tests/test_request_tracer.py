@@ -1,25 +1,23 @@
 """
-Unit tests for RequestTracer [v7.2-Enhanced].
+RequestTracer 单元测试 [v7.2-Enhanced]。
 
-Tests:
-- Tracer creation and ContextVar setup
-- Span creation, timing, and output capture
-- Nested span (parent-child) relationships
-- Error capture within spans
-- Slow span detection (> 5000ms threshold)
-- LLM call and tool call recording
-- finish() summary generation and idempotency
-- Phase breakdown percentage calculation
-- Trace file output to data/traces/
-- Recent traces in-memory index
-- @traced_node decorator integration
-- Context isolation between tracer instances
+测试：
+- Tracer 创建与 ContextVar 设置
+- Span 创建、计时与输出捕获
+- 嵌套 span（父子）关系
+- Span 内错误捕获
+- 慢 span 检测（> 5000ms 阈值）
+- LLM 调用与工具调用记录
+- finish() 摘要生成与幂等性
+- 阶段占比（phase breakdown）百分比计算
+- Trace 文件输出到 data/traces/
+- 内存中的最近 traces 索引
+- @traced_node 装饰器集成
+- tracer 实例间的上下文隔离
 """
 
-import asyncio
 import json
 import time
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -36,10 +34,10 @@ from src.observability.request_tracer import (
 
 
 class TestTracerCreation:
-    """Test RequestTracer initialization."""
+    """测试 RequestTracer 初始化。"""
 
     def test_tracer_creation(self):
-        """trace_id auto-generated, ContextVar set."""
+        """trace_id 自动生成，ContextVar 已设置。"""
         tracer = RequestTracer(user_input="测试输入")
         assert tracer.trace_id is not None
         assert len(tracer.trace_id) == 12  # uuid4 hex[:12]
@@ -48,13 +46,13 @@ class TestTracerCreation:
         tracer.finish()
 
     def test_tracer_custom_trace_id(self):
-        """Explicit trace_id is used."""
+        """显式指定 trace_id 会被使用。"""
         tracer = RequestTracer(user_input="test", trace_id="custom-id-123")
         assert tracer.trace_id == "custom-id-123"
         tracer.finish()
 
     def test_tracer_input_truncation(self):
-        """User input truncated to 200 chars."""
+        """用户输入截断到 200 个字符。"""
         long_input = "x" * 500
         tracer = RequestTracer(user_input=long_input)
         assert len(tracer.user_input) == 200
@@ -62,10 +60,10 @@ class TestTracerCreation:
 
 
 class TestSpanBasic:
-    """Test basic span creation and timing."""
+    """测试基本 span 创建与计时。"""
 
     def test_span_basic(self):
-        """Span records timing and output."""
+        """Span 记录计时与输出。"""
         tracer = RequestTracer(user_input="test")
         with tracer.span("test_node", input_summary="input data") as span:
             time.sleep(0.01)  # 10ms
@@ -77,12 +75,12 @@ class TestSpanBasic:
         assert s.input_summary == "input data"
         assert s.output_summary == "result=ok"
         assert s.duration_ms is not None
-        assert s.duration_ms >= 10  # At least 10ms
+        assert s.duration_ms >= 10  # 至少 10ms
         assert s.error is None
         tracer.finish()
 
     def test_span_id_format(self):
-        """Span ID follows {trace_id}-{counter:03d} format."""
+        """Span ID 遵循 {trace_id}-{counter:03d} 格式。"""
         tracer = RequestTracer(user_input="test", trace_id="abc123")
         with tracer.span("node_a") as span:
             pass
@@ -90,7 +88,7 @@ class TestSpanBasic:
         tracer.finish()
 
     def test_span_output_truncation(self):
-        """Output summary truncated to 500 chars."""
+        """输出摘要截断到 500 个字符。"""
         tracer = RequestTracer(user_input="test")
         with tracer.span("node") as span:
             span.set_output("y" * 1000)
@@ -99,26 +97,26 @@ class TestSpanBasic:
 
 
 class TestSpanNesting:
-    """Test nested span (parent-child) relationships."""
+    """测试嵌套 span（父子）关系。"""
 
     def test_span_nesting(self):
-        """Inner span becomes child of outer span."""
+        """内层 span 成为外层 span 的子级。"""
         tracer = RequestTracer(user_input="test")
         with tracer.span("parent_node") as parent:
             with tracer.span("child_node") as child:
                 child.set_output("child done")
             parent.set_output("parent done")
 
-        # Only parent in top-level spans
+        # 顶层 span 中只有 parent
         assert len(tracer.spans) == 1
         assert tracer.spans[0].node_name == "parent_node"
-        # Child in parent's children
+        # 子级在 parent 的 children 中
         assert len(tracer.spans[0].children) == 1
         assert tracer.spans[0].children[0].node_name == "child_node"
         tracer.finish()
 
     def test_deep_nesting(self):
-        """Three levels of nesting."""
+        """三层嵌套。"""
         tracer = RequestTracer(user_input="test")
         with tracer.span("level1"):
             with tracer.span("level2"):
@@ -137,10 +135,10 @@ class TestSpanNesting:
 
 
 class TestSpanErrorCapture:
-    """Test error capture within spans."""
+    """测试 span 内的错误捕获。"""
 
     def test_span_error_capture(self):
-        """Exception sets span.error and re-raises."""
+        """异常设置 span.error 并重新抛出。"""
         tracer = RequestTracer(user_input="test")
         with pytest.raises(ValueError, match="test error"):
             with tracer.span("error_node") as span:
@@ -151,7 +149,7 @@ class TestSpanErrorCapture:
         tracer.finish()
 
     def test_span_error_truncation(self):
-        """Error message truncated to 1000 chars."""
+        """错误消息截断到 1000 个字符。"""
         tracer = RequestTracer(user_input="test")
         long_error = "e" * 2000
         with pytest.raises(RuntimeError):
@@ -162,14 +160,14 @@ class TestSpanErrorCapture:
 
 
 class TestSlowSpanDetection:
-    """Test performance bottleneck detection."""
+    """测试性能瓶颈检测。"""
 
     def test_slow_span_detection(self):
-        """Span > SLOW_SPAN_THRESHOLD_MS flagged as slow."""
+        """超过 SLOW_SPAN_THRESHOLD_MS 的 span 被标记为慢。"""
         tracer = RequestTracer(user_input="test")
         with tracer.span("slow_node") as span:
             pass
-        # Manually set duration to simulate slow span
+        # 手动设置时长以模拟慢 span
         tracer.spans[0].duration_ms = SLOW_SPAN_THRESHOLD_MS + 100
         tracer.spans[0].is_slow = True
 
@@ -177,7 +175,7 @@ class TestSlowSpanDetection:
         tracer.finish()
 
     def test_normal_span_not_slow(self):
-        """Fast span not flagged."""
+        """快速 span 不被标记。"""
         tracer = RequestTracer(user_input="test")
         with tracer.span("fast_node"):
             pass
@@ -186,10 +184,10 @@ class TestSlowSpanDetection:
 
 
 class TestRecordLLMCall:
-    """Test LLM call recording."""
+    """测试 LLM 调用记录。"""
 
     def test_record_llm_call(self):
-        """LLM call recorded as child span of active span."""
+        """LLM 调用被记录为活动 span 的子级。"""
         tracer = RequestTracer(user_input="test")
         with tracer.span("intent_classifier"):
             tracer.record_llm_call(
@@ -201,7 +199,7 @@ class TestRecordLLMCall:
                 success=True,
             )
 
-        # LLM call is child of intent_classifier span
+        # LLM 调用是 intent_classifier span 的子级
         parent = tracer.spans[0]
         assert len(parent.children) == 1
         llm_span = parent.children[0]
@@ -213,7 +211,7 @@ class TestRecordLLMCall:
         tracer.finish()
 
     def test_record_llm_call_top_level(self):
-        """LLM call without active span goes to top-level."""
+        """无活动 span 时的 LLM 调用进入顶层。"""
         tracer = RequestTracer(user_input="test")
         tracer.record_llm_call(
             model="qwen2.5:7b",
@@ -225,7 +223,7 @@ class TestRecordLLMCall:
         tracer.finish()
 
     def test_record_llm_call_slow(self):
-        """LLM call > threshold marked slow."""
+        """超过阈值的 LLM 调用被标记为慢。"""
         tracer = RequestTracer(user_input="test")
         tracer.record_llm_call(
             model="qwen2.5:14b",
@@ -237,10 +235,10 @@ class TestRecordLLMCall:
 
 
 class TestRecordToolCall:
-    """Test tool call recording."""
+    """测试工具调用记录。"""
 
     def test_record_tool_call(self):
-        """Tool call recorded as child span."""
+        """工具调用被记录为子 span。"""
         tracer = RequestTracer(user_input="test")
         with tracer.span("data_collector"):
             tracer.record_tool_call(
@@ -261,7 +259,7 @@ class TestRecordToolCall:
         tracer.finish()
 
     def test_record_tool_call_error(self):
-        """Failed tool call records error."""
+        """失败的工具调用记录错误。"""
         tracer = RequestTracer(user_input="test")
         tracer.record_tool_call(
             tool_name="alarm_query",
@@ -275,10 +273,10 @@ class TestRecordToolCall:
 
 
 class TestFinishSummary:
-    """Test finish() summary generation."""
+    """测试 finish() 摘要生成。"""
 
     def test_finish_summary(self):
-        """finish() returns complete summary dict."""
+        """finish() 返回完整的摘要字典。"""
         tracer = RequestTracer(user_input="查询光纤1", trace_id="test-fin")
         with tracer.span("rule_engine") as span:
             span.set_output("match=R001")
@@ -288,7 +286,7 @@ class TestFinishSummary:
         assert summary["trace_id"] == "test-fin"
         assert summary["user_input"] == "查询光纤1"
         assert summary["processing_path"] == "fast"
-        assert summary["total_ms"] >= 0  # May be 0.0 for instant operations
+        assert summary["total_ms"] >= 0  # 即时操作可能为 0.0
         assert summary["span_count"] == 1
         assert summary["status"] == "SUCCESS"
         assert summary["final_output"] == "光纤1正常"
@@ -296,14 +294,14 @@ class TestFinishSummary:
         assert "timestamp" in summary
 
     def test_finish_idempotent(self):
-        """Repeated finish() returns empty dict."""
+        """重复调用 finish() 返回空字典。"""
         tracer = RequestTracer(user_input="test")
         tracer.finish()
         result = tracer.finish()
         assert result == {}
 
     def test_finish_status_error(self):
-        """Status is ERROR when any span has error."""
+        """任一 span 有错误时状态为 ERROR。"""
         tracer = RequestTracer(user_input="test")
         with pytest.raises(ValueError):
             with tracer.span("bad_node"):
@@ -312,11 +310,11 @@ class TestFinishSummary:
         assert summary["status"] == "ERROR"
 
     def test_finish_status_slow(self):
-        """Status is SLOW when spans exceed threshold."""
+        """span 超过阈值时状态为 SLOW。"""
         tracer = RequestTracer(user_input="test")
         with tracer.span("node"):
             pass
-        # Force slow
+        # 强制设为慢
         tracer.spans[0].is_slow = True
         tracer.spans[0].duration_ms = 6000.0
         summary = tracer.finish()
@@ -325,10 +323,10 @@ class TestFinishSummary:
 
 
 class TestPhaseBreakdown:
-    """Test phase breakdown percentage calculation."""
+    """测试阶段占比（phase breakdown）百分比计算。"""
 
     def test_phase_breakdown(self):
-        """Phase breakdown has correct percentages."""
+        """阶段占比具有正确的百分比。"""
         tracer = RequestTracer(user_input="test")
         with tracer.span("node_a"):
             time.sleep(0.01)
@@ -338,22 +336,22 @@ class TestPhaseBreakdown:
         summary = tracer.finish()
         breakdown = summary["phase_breakdown"]
         assert len(breakdown) == 2
-        # Each should have node, duration_ms, percentage, is_slow
+        # 每一项都应包含 node、duration_ms、percentage、is_slow
         for item in breakdown:
             assert "node" in item
             assert "duration_ms" in item
             assert "percentage" in item
             assert "is_slow" in item
-        # Percentages should sum to roughly 100 (may not be exact due to overhead)
+        # 百分比之和应约为 100（因开销可能并非精确）
         total_pct = sum(item["percentage"] for item in breakdown)
-        assert 50 < total_pct <= 100  # Allow for timing overhead
+        assert 50 < total_pct <= 100  # 允许计时开销
 
 
 class TestTraceFileOutput:
-    """Test JSON file output."""
+    """测试 JSON 文件输出。"""
 
     def test_trace_file_output(self, tmp_path):
-        """Trace written to data/traces/{trace_id}.json."""
+        """Trace 写入 data/traces/{trace_id}.json。"""
         with patch("src.observability.request_tracer.TRACES_DIR", tmp_path / "traces"):
             tracer = RequestTracer(user_input="file test", trace_id="file-trace-01")
             with tracer.span("node"):
@@ -368,15 +366,15 @@ class TestTraceFileOutput:
 
 
 class TestRecentTracesIndex:
-    """Test in-memory recent traces index."""
+    """测试内存中的最近 traces 索引。"""
 
     def test_recent_traces_index(self):
-        """Finished traces appear in get_recent_traces()."""
+        """已完成的 trace 出现在 get_recent_traces() 中。"""
         tracer = RequestTracer(user_input="index test", trace_id="idx-001")
         tracer.finish(processing_path="fast")
 
         recent = get_recent_traces(limit=50)
-        # Find our trace in the list
+        # 在列表中查找我们的 trace
         found = [t for t in recent if t["trace_id"] == "idx-001"]
         assert len(found) == 1
         assert found[0]["processing_path"] == "fast"
@@ -384,10 +382,10 @@ class TestRecentTracesIndex:
 
 
 class TestTracedNodeDecorator:
-    """Test @traced_node decorator integration."""
+    """测试 @traced_node 装饰器集成。"""
 
     async def test_traced_node_decorator(self):
-        """@traced_node wraps async function with tracing."""
+        """@traced_node 用 tracing 包装异步函数。"""
         tracer = RequestTracer(user_input="decorator test")
 
         @traced_node("test_decorated_node")
@@ -397,16 +395,17 @@ class TestTracedNodeDecorator:
         result = await my_node({"user_input": "test", "trace_id": tracer.trace_id})
 
         assert result["intent"] == "single_query"
-        # Span should be recorded
+        # 应记录 span
         assert len(tracer.spans) == 1
         assert tracer.spans[0].node_name == "test_decorated_node"
         assert "intent=single_query" in tracer.spans[0].output_summary
         tracer.finish()
 
     async def test_traced_node_without_tracer(self):
-        """@traced_node works without active tracer (fallback logging)."""
-        # Ensure no active tracer
+        """@traced_node 在无活动 tracer 时正常工作（回退到日志）。"""
+        # 确保没有活动 tracer
         from src.observability.request_tracer import _current_tracer
+
         _current_tracer.set(None)
 
         @traced_node("standalone_node")
@@ -417,7 +416,7 @@ class TestTracedNodeDecorator:
         assert result["final_output"] == "hello"
 
     async def test_traced_node_error(self):
-        """@traced_node captures errors in span."""
+        """@traced_node 在 span 中捕获错误。"""
         tracer = RequestTracer(user_input="error test")
 
         @traced_node("error_node")
@@ -432,10 +431,10 @@ class TestTracedNodeDecorator:
 
 
 class TestContextIsolation:
-    """Test ContextVar isolation between tracer instances."""
+    """测试 tracer 实例间的 ContextVar 隔离。"""
 
     def test_context_isolation(self):
-        """Creating a new tracer updates ContextVar."""
+        """创建新 tracer 会更新 ContextVar。"""
         tracer1 = RequestTracer(user_input="first", trace_id="trace-1")
         assert get_current_trace_id() == "trace-1"
 
@@ -447,7 +446,7 @@ class TestContextIsolation:
         tracer2.finish()
 
     def test_finish_clears_tracer_context(self):
-        """finish() clears the tracer ContextVar."""
+        """finish() 清除 tracer ContextVar。"""
         tracer = RequestTracer(user_input="test", trace_id="clear-test")
         assert get_current_tracer() is tracer
         tracer.finish()
@@ -455,10 +454,10 @@ class TestContextIsolation:
 
 
 class TestTraceSpanDataclass:
-    """Test TraceSpan dataclass methods."""
+    """测试 TraceSpan dataclass 方法。"""
 
     def test_to_dict(self):
-        """to_dict() produces correct structure."""
+        """to_dict() 产生正确的结构。"""
         span = TraceSpan(
             span_id="t-001",
             node_name="test",
@@ -472,10 +471,10 @@ class TestTraceSpanDataclass:
         assert d["span_id"] == "t-001"
         assert d["node_name"] == "test"
         assert d["duration_ms"] == 1000.0
-        assert "children" not in d  # No children → key omitted
+        assert "children" not in d  # 无子级 → 省略该键
 
     def test_to_dict_with_children(self):
-        """to_dict() includes children when present."""
+        """to_dict() 在存在子级时包含 children。"""
         parent = TraceSpan(span_id="p", node_name="parent", start_time=0)
         child = TraceSpan(span_id="c", node_name="child", start_time=0)
         parent.add_child(child)
@@ -485,7 +484,7 @@ class TestTraceSpanDataclass:
         assert d["children"][0]["node_name"] == "child"
 
     def test_set_metadata(self):
-        """set_metadata stores key-value pairs."""
+        """set_metadata 存储键值对。"""
         span = TraceSpan(span_id="m", node_name="meta", start_time=0)
         span.set_metadata("model", "qwen2.5:14b")
         span.set_metadata("tokens", 100)

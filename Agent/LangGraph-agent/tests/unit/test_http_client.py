@@ -1,14 +1,15 @@
 """HTTP 客户端单元测试 [v7.1]"""
 
 import pytest
+
 from src.tools._http_client import (
-    FiberHttpClient,
     CircuitBreaker,
-    CircuitState,
     CircuitOpenError,
-    make_error_json,
+    CircuitState,
+    FiberHttpClient,
     assert_positive_int,
     assert_valid_color,
+    make_error_json,
 )
 
 
@@ -38,15 +39,16 @@ class TestCircuitBreaker:
     @pytest.mark.asyncio
     async def test_closes_on_success_in_half_open(self):
         import asyncio
+
         cb = CircuitBreaker(failure_threshold=2, cooldown_seconds=0.1)
         await cb.record_failure()
         await cb.record_failure()
         assert cb.state == CircuitState.OPEN
         await asyncio.sleep(0.15)
-        # After cooldown, check() transitions to HALF_OPEN
+        # 冷却结束后，check() 转入 HALF_OPEN
         await cb.check()
         assert cb.state == CircuitState.HALF_OPEN
-        # Success in HALF_OPEN closes the circuit
+        # HALF_OPEN 状态下成功会关闭熔断器
         await cb.record_success()
         assert cb.state == CircuitState.CLOSED
 
@@ -73,19 +75,22 @@ class TestBackpressureController:
 
     def test_initial_error_rate_zero(self):
         from src.tools._http_client import BackpressureController
+
         bp = BackpressureController()
         assert bp.error_rate == 0.0
 
     def test_initial_delay_is_base(self):
         from src.tools._http_client import BackpressureController
+
         bp = BackpressureController(base_delay=0.05)
         assert bp.current_delay == 0.05
 
     @pytest.mark.asyncio
     async def test_error_rate_calculation(self):
         from src.tools._http_client import BackpressureController
+
         bp = BackpressureController()
-        # Record 8 successes and 2 failures
+        # 记录 8 次成功和 2 次失败
         for _ in range(8):
             await bp.record(True)
         for _ in range(2):
@@ -95,36 +100,39 @@ class TestBackpressureController:
     @pytest.mark.asyncio
     async def test_high_error_rate_increases_delay(self):
         from src.tools._http_client import BackpressureController
+
         bp = BackpressureController(
             base_delay=0.05,
             error_rate_threshold=0.1,
             max_delay=2.0,
         )
-        # Record many failures to push error rate high
+        # 记录大量失败以推高错误率
         for _ in range(15):
             await bp.record(False)
         for _ in range(5):
             await bp.record(True)
-        # Error rate = 15/20 = 0.75, well above threshold
+        # 错误率 = 15/20 = 0.75，远超阈值
         assert bp.current_delay > 0.05
 
     @pytest.mark.asyncio
     async def test_window_size_limit(self):
         from src.tools._http_client import BackpressureController
+
         bp = BackpressureController()
-        # Record more than window size (20)
+        # 记录超过窗口大小（20）
         for _ in range(30):
             await bp.record(True)
-        # Window should only keep last 20
+        # 窗口应只保留最近 20 条
         assert len(bp._recent_requests) == 20
 
     @pytest.mark.asyncio
     async def test_acquire_release(self):
         from src.tools._http_client import BackpressureController
+
         bp = BackpressureController(base_concurrency=2, base_delay=0.0)
         await bp.acquire()
         bp.release()
-        # Should not deadlock
+        # 不应死锁
 
 
 class TestCircuitBreakerAdvanced:
@@ -132,22 +140,23 @@ class TestCircuitBreakerAdvanced:
 
     @pytest.mark.asyncio
     async def test_half_open_probe_failure_reopens(self):
-        """Probe failure in HALF_OPEN should re-open circuit."""
+        """HALF_OPEN 状态下的探测失败应重新打开熔断器。"""
         import asyncio
+
         cb = CircuitBreaker(failure_threshold=2, cooldown_seconds=0.1)
         await cb.record_failure()
         await cb.record_failure()
         assert cb.state == CircuitState.OPEN
         await asyncio.sleep(0.15)
-        await cb.check()  # Transitions to HALF_OPEN
+        await cb.check()  # 转入 HALF_OPEN
         assert cb.state == CircuitState.HALF_OPEN
-        # Probe fails
+        # 探测失败
         await cb.record_failure()
         assert cb.state == CircuitState.OPEN
 
     @pytest.mark.asyncio
     async def test_success_decrements_failure_count(self):
-        """Success in CLOSED state decrements failure count."""
+        """CLOSED 状态下成功会使失败计数递减。"""
         cb = CircuitBreaker(failure_threshold=5)
         await cb.record_failure()
         await cb.record_failure()
@@ -157,7 +166,7 @@ class TestCircuitBreakerAdvanced:
 
     @pytest.mark.asyncio
     async def test_failure_count_does_not_go_negative(self):
-        """Failure count should not go below 0."""
+        """失败计数不应低于 0。"""
         cb = CircuitBreaker(failure_threshold=5)
         await cb.record_success()
         assert cb.failure_count == 0
@@ -168,9 +177,10 @@ class TestFiberHttpClientRetry:
 
     @pytest.mark.asyncio
     async def test_4xx_no_retry(self):
-        """4xx responses should NOT be retried (client error)."""
+        """4xx 响应不应重试（客户端错误）。"""
+        from unittest.mock import AsyncMock
+
         import httpx
-        from unittest.mock import AsyncMock, patch
 
         client = FiberHttpClient(base_url="http://mock:8080", max_retries=3)
         call_count = 0
@@ -187,7 +197,7 @@ class TestFiberHttpClientRetry:
         client.client = mock_client
 
         result = await client.get("/test")
-        # Should only be called once (no retry for 4xx)
+        # 应只调用一次（4xx 不重试）
         assert call_count == 1
 
 
@@ -196,6 +206,7 @@ class TestHelpers:
 
     def test_make_error_json(self):
         import json
+
         result = json.loads(make_error_json("TEST_ERR", "something failed", "try again"))
         assert result["error"] is True
         assert result["error_code"] == "TEST_ERR"
@@ -204,6 +215,7 @@ class TestHelpers:
 
     def test_make_error_json_unicode(self):
         import json
+
         result = json.loads(make_error_json("FIBER_ERR", "光纤未找到", "请检查ID"))
         assert result["message"] == "光纤未找到"
 
@@ -232,4 +244,4 @@ class TestHelpers:
         with pytest.raises(AssertionError):
             assert_valid_color("")
         with pytest.raises(AssertionError):
-            assert_valid_color("red")  # Case-sensitive
+            assert_valid_color("red")  # 区分大小写

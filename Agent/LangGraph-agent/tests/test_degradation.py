@@ -1,80 +1,78 @@
 """
-Unit tests for Degradation Manager [v7.1/v7.2].
+降级管理器单元测试 [v7.1/v7.2]。
 
-Tests:
-- Five-level degradation level calculation
-- Level transitions based on LLM/backend availability
-- Status reporting
-- Degradation API endpoint structure
+测试：
+- 五级降级等级计算
+- 基于 LLM/后端可用性的等级转换
+- 状态报告
+- 降级 API 端点结构
 """
-
-import pytest
 
 from src.resilience.degradation import DegradationManager
 
 
 class TestDegradationLevelCalculation:
-    """Test _calculate_level() logic for all five levels."""
+    """测试 _calculate_level() 在全部五个等级下的逻辑。"""
 
     def test_level_calculation_all_ok(self):
-        """All components available → L0 (NORMAL)."""
+        """所有组件可用 → L0 (NORMAL)。"""
         mgr = DegradationManager()
         mgr._llm_status = {"primary": True, "secondary": True, "tertiary": True}
         mgr._backend_available = True
         assert mgr._calculate_level() == 0
 
     def test_level_primary_down(self):
-        """14b unavailable → L1 (SIMPLIFIED, 7b takes over)."""
+        """14b 不可用 → L1 (SIMPLIFIED, 7b 接管)。"""
         mgr = DegradationManager()
         mgr._llm_status = {"primary": False, "secondary": True, "tertiary": True}
         mgr._backend_available = True
         assert mgr._calculate_level() == 1
 
     def test_level_secondary_down(self):
-        """7b unavailable (but 3b ok) → L2 (SMALL_MODEL)."""
+        """7b 不可用（但 3b 可用）→ L2 (SMALL_MODEL)。"""
         mgr = DegradationManager()
         mgr._llm_status = {"primary": False, "secondary": False, "tertiary": True}
         mgr._backend_available = True
         assert mgr._calculate_level() == 2
 
     def test_level_all_llm_down(self):
-        """All LLM unavailable, backend ok → L3 (NO_LLM, template only)."""
+        """所有 LLM 不可用、后端可用 → L3 (NO_LLM, 仅模板)。"""
         mgr = DegradationManager()
         mgr._llm_status = {"primary": False, "secondary": False, "tertiary": False}
         mgr._backend_available = True
         assert mgr._calculate_level() == 3
 
     def test_level_all_down(self):
-        """All LLM + backend unavailable → L4 (OFFLINE)."""
+        """所有 LLM + 后端均不可用 → L4 (OFFLINE)。"""
         mgr = DegradationManager()
         mgr._llm_status = {"primary": False, "secondary": False, "tertiary": False}
         mgr._backend_available = False
         assert mgr._calculate_level() == 4
 
     def test_level_backend_down_llm_ok(self):
-        """Backend down but LLM available → still L0 (LLM can respond)."""
+        """后端不可用但 LLM 可用 → 仍为 L0（LLM 可响应）。"""
         mgr = DegradationManager()
         mgr._llm_status = {"primary": True, "secondary": True, "tertiary": True}
         mgr._backend_available = False
-        # With LLM available, not offline
+        # LLM 可用时并非离线
         level = mgr._calculate_level()
-        assert level == 0  # LLM still works, just no data queries
+        assert level == 0  # LLM 仍可工作，只是无法进行数据查询
 
     def test_level_only_tertiary_no_backend(self):
-        """Only 3b available, no backend → L3 (not L4 since LLM exists)."""
+        """仅有 3b 可用、无后端 → L3（因存在 LLM 故非 L4）。"""
         mgr = DegradationManager()
         mgr._llm_status = {"primary": False, "secondary": False, "tertiary": True}
         mgr._backend_available = False
-        # tertiary is available so not "all LLM down"
+        # tertiary 可用，因此不算"所有 LLM 不可用"
         level = mgr._calculate_level()
-        assert level == 2  # L2: only 3b available
+        assert level == 2  # L2: 仅有 3b 可用
 
 
 class TestDegradationManagerState:
-    """Test manager state and status reporting."""
+    """测试管理器状态与状态报告。"""
 
     def test_initial_state(self):
-        """Manager starts at L0 with all components assumed available."""
+        """管理器初始为 L0，假定所有组件可用。"""
         mgr = DegradationManager()
         assert mgr.current_level == 0
         assert mgr._llm_status["primary"] is True
@@ -83,7 +81,7 @@ class TestDegradationManagerState:
         assert mgr._backend_available is True
 
     def test_level_name_property(self):
-        """level_name returns human-readable string."""
+        """level_name 返回可读字符串。"""
         mgr = DegradationManager()
         mgr.current_level = 0
         assert "NORMAL" in mgr.level_name
@@ -101,7 +99,7 @@ class TestDegradationManagerState:
         assert "OFFLINE" in mgr.level_name
 
     def test_get_status_structure(self):
-        """get_status() returns complete status dict."""
+        """get_status() 返回完整的状态字典。"""
         mgr = DegradationManager()
         status = mgr.get_status()
 
@@ -116,7 +114,7 @@ class TestDegradationManagerState:
         assert status["backend_available"] is True
 
     def test_get_status_reflects_changes(self):
-        """Status reflects manual level changes."""
+        """状态反映手动修改的等级。"""
         mgr = DegradationManager()
         mgr.current_level = 3
         mgr._llm_status = {"primary": False, "secondary": False, "tertiary": False}
@@ -129,63 +127,63 @@ class TestDegradationManagerState:
 
 
 class TestDegradationTransitions:
-    """Test level transition scenarios."""
+    """测试等级转换场景。"""
 
     def test_degradation_sequence(self):
-        """Simulate progressive degradation L0 → L1 → L2 → L3."""
+        """模拟渐进式降级 L0 → L1 → L2 → L3。"""
         mgr = DegradationManager()
 
-        # Start normal
+        # 初始正常
         mgr._llm_status = {"primary": True, "secondary": True, "tertiary": True}
         mgr._backend_available = True
         assert mgr._calculate_level() == 0
 
-        # Primary fails
+        # Primary 故障
         mgr._llm_status["primary"] = False
         assert mgr._calculate_level() == 1
 
-        # Secondary also fails
+        # Secondary 也故障
         mgr._llm_status["secondary"] = False
         assert mgr._calculate_level() == 2
 
-        # Tertiary fails too
+        # Tertiary 也故障
         mgr._llm_status["tertiary"] = False
         assert mgr._calculate_level() == 3
 
     def test_recovery_sequence(self):
-        """Simulate recovery L3 → L2 → L1 → L0."""
+        """模拟恢复 L3 → L2 → L1 → L0。"""
         mgr = DegradationManager()
         mgr._llm_status = {"primary": False, "secondary": False, "tertiary": False}
         mgr._backend_available = True
         assert mgr._calculate_level() == 3
 
-        # Tertiary recovers
+        # Tertiary 恢复
         mgr._llm_status["tertiary"] = True
         assert mgr._calculate_level() == 2
 
-        # Secondary recovers
+        # Secondary 恢复
         mgr._llm_status["secondary"] = True
         assert mgr._calculate_level() == 1
 
-        # Primary recovers
+        # Primary 恢复
         mgr._llm_status["primary"] = True
         assert mgr._calculate_level() == 0
 
 
 class TestDegradationStatusAPI:
-    """Test /api/v1/degradation endpoint structure."""
+    """测试 /api/v1/degradation 端点结构。"""
 
     def test_degradation_status_api(self):
-        """Status dict has all fields needed by frontend."""
+        """状态字典包含前端所需的全部字段。"""
         mgr = DegradationManager()
         status = mgr.get_status()
 
-        # Frontend expects these fields
+        # 前端期望这些字段
         required_fields = ["level", "level_name", "llm_status", "backend_available"]
         for field in required_fields:
             assert field in status, f"Missing field: {field}"
 
-        # llm_status should have all three tiers
+        # llm_status 应包含全部三个层级
         assert "primary" in status["llm_status"]
         assert "secondary" in status["llm_status"]
         assert "tertiary" in status["llm_status"]

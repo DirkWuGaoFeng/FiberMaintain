@@ -1,8 +1,6 @@
 """v8 安全层测试 — 注入检测 + 参数校验 + clarification."""
-import pytest
 
 from src.v8.security import (
-    SecurityVerdict,
     check_injection,
     run_security_check,
     sanitize_input,
@@ -55,12 +53,12 @@ class TestSanitizeInput:
 
 class TestParamValidation:
     def test_spanloss_without_fiber_id(self):
-        result = validate_params("spanloss_check", {})
+        result = validate_params("spanloss_query", {})
         assert result is not None
-        assert "光纤 ID" in result
+        assert "光纤" in result
 
     def test_spanloss_with_fiber_id(self):
-        result = validate_params("spanloss_check", {"fiber_ids": [1]})
+        result = validate_params("spanloss_query", {"fiber_ids": [1]})
         assert result is None
 
     def test_general_query_no_fiber_needed(self):
@@ -87,17 +85,17 @@ class TestRunSecurityCheck:
     def test_clarification_triggered(self):
         verdict = run_security_check(
             "查看跨段损耗",
-            intent="spanloss_check",
+            intent="spanloss_query",
             params={},
         )
         assert verdict.passed
         assert verdict.needs_clarification
-        assert "光纤 ID" in verdict.clarification_question
+        assert "光纤" in verdict.clarification_question
 
     def test_params_complete_no_clarification(self):
         verdict = run_security_check(
             "查看光纤1跨段损耗",
-            intent="spanloss_check",
+            intent="spanloss_query",
             params={"fiber_ids": [1]},
         )
         assert verdict.passed

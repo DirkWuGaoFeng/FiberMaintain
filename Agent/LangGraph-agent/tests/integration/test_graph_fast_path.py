@@ -1,48 +1,48 @@
 """
-Integration tests for Main Graph — Fast Path [v7.1].
+主图集成测试 — 快速路径 [v7.1]。
 
-Tests the complete fast path chain:
+测试完整快速路径链路：
   input_guard → rule_engine → fast_path_executor → result_aggregator
 
-All backend calls are mocked. No LLM calls in fast path.
+所有后端调用均为 mock。快速路径中无 LLM 调用。
 """
 
 import json
 
 import pytest
 
+from src.graph.state import create_initial_state
+from src.nodes.fast_path_executor import fast_path_executor_node
 from src.nodes.input_guard import input_guard_node
 from src.nodes.rule_engine import rule_engine_node
-from src.nodes.fast_path_executor import fast_path_executor_node
-from src.graph.state import create_initial_state
 
 
 class TestFastPathSpanloss:
-    """Fast path: single fiber spanloss query."""
+    """快速路径：单纤跨段损耗查询。"""
 
     @pytest.mark.asyncio
     async def test_spanloss_normal(self, mock_backend):
         """查询光纤1的衰耗 → Fast Path → normal result."""
         state = create_initial_state("查询光纤1的衰耗")
 
-        # Step 1: input_guard
+        # 第 1 步：input_guard
         guard_result = await input_guard_node(state)
         state.update(guard_result)
         assert state.get("processing_path") != "blocked"
 
-        # Step 2: rule_engine
+        # 第 2 步：rule_engine
         rule_result = await rule_engine_node(state)
         state.update(rule_result)
         assert state["rule_match"] is not None
         assert state["rule_match"]["intent"] == "spanloss_query"
         assert state["rule_match"]["fast_path_eligible"] is True
 
-        # Step 3: fast_path_executor
+        # 第 3 步：fast_path_executor
         fp_result = await fast_path_executor_node(state)
         state.update(fp_result)
         assert state["processing_path"] == "fast"
         assert state["final_output"] is not None
-        assert "3.2" in state["final_output"]  # spanloss value from mock
+        assert "3.2" in state["final_output"]  # mock 中的 spanloss 值
 
     @pytest.mark.asyncio
     async def test_spanloss_warning(self, mock_backend):
@@ -73,7 +73,7 @@ class TestFastPathSpanloss:
 
 
 class TestFastPathConnection:
-    """Fast path: fiber connection query."""
+    """快速路径：光纤连纤查询。"""
 
     @pytest.mark.asyncio
     async def test_connection_query(self, mock_backend):
@@ -92,7 +92,7 @@ class TestFastPathConnection:
 
 
 class TestFastPathColored:
-    """Fast path: colored fiber query."""
+    """快速路径：带颜色的光纤查询。"""
 
     @pytest.mark.asyncio
     async def test_red_fiber_query(self, mock_backend):
@@ -111,7 +111,7 @@ class TestFastPathColored:
 
 
 class TestFastPathStats:
-    """Fast path: statistics query."""
+    """快速路径：统计查询。"""
 
     @pytest.mark.asyncio
     async def test_stats_query(self, mock_backend):
@@ -130,7 +130,7 @@ class TestFastPathStats:
 
 
 class TestFastPathPortAlarm:
-    """Fast path: port alarm query."""
+    """快速路径：端口告警查询。"""
 
     @pytest.mark.asyncio
     async def test_port_alarm_query(self, mock_backend):
@@ -150,17 +150,15 @@ class TestFastPathPortAlarm:
 
 
 class TestFastPathErrorHandling:
-    """Fast path error scenarios."""
+    """快速路径错误场景。"""
 
     @pytest.mark.asyncio
     async def test_backend_error_graceful(self, mock_backend):
-        """Backend returning error should produce degraded output."""
-        # Override mock to return error
-        mock_backend["/api/v1/fibers/99/spanloss"] = json.dumps({
-            "error": True, "message": "Fiber not found"
-        })
+        """后端返回错误时应产生降级输出。"""
+        # 覆盖 mock 以返回错误
+        mock_backend["/api/v1/fibers/99/spanloss"] = json.dumps({"error": True, "message": "Fiber not found"})
         state = create_initial_state("查询光纤99的衰耗")
-        # Manually set rule_match for fiber 99
+        # 手动为光纤 99 设置 rule_match
         state["rule_match"] = {
             "intent": "spanloss_query",
             "params": {"fiber_id": 99},
@@ -172,5 +170,5 @@ class TestFastPathErrorHandling:
 
         fp_result = await fast_path_executor_node(state)
         state.update(fp_result)
-        # Should still produce output (error message or degraded)
+        # 仍应产生输出（错误消息或降级）
         assert state["final_output"] is not None

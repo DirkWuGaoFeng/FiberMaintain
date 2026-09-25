@@ -1,16 +1,14 @@
 """
-Unit tests for Rule Engine v7.2 new rules (R101-R105).
+规则引擎 v7.2 新规则（R101-R105）的单元测试。
 
-Tests colloquial query patterns added in v7.2:
-- R101: 连纤查询 ("分析连纤1中断的原因", "连纤3")
-- R102: 连纤颜色/状态 ("连纤3颜色", "连纤5的状态")
-- R103: 断纤查询 ("目前断纤有哪些", "当前中断光纤列表")
-- R104: 光纤中断分析 ("光纤3中断的原因")
-- R105: 口语化衰耗 ("光纤5衰耗", "连纤2的损耗")
-- Rule priority: existing rules not shadowed
+测试 v7.2 新增的口语化查询模式：
+- R101: 连纤查询（"分析连纤1中断的原因"、"连纤3"）
+- R102: 连纤颜色/状态（"连纤3颜色"、"连纤5的状态"）
+- R103: 断纤查询（"目前断纤有哪些"、"当前中断光纤列表"）
+- R104: 光纤中断分析（"光纤3中断的原因"）
+- R105: 口语化衰耗（"光纤5衰耗"、"连纤2的损耗"）
+- 规则优先级：已有规则不被遮蔽
 """
-
-import pytest
 
 from src.nodes.rule_engine import RuleEngine
 
@@ -168,7 +166,7 @@ class TestR105ColloquialSpanloss:
 
 
 class TestRulePriority:
-    """Ensure new rules don't shadow existing rules."""
+    """确保新规则不会遮蔽已有规则。"""
 
     def test_existing_spanloss_rule_priority(self):
         """'查询光纤1的衰耗' still matches R001 (spanloss_query)."""
@@ -193,13 +191,13 @@ class TestRulePriority:
         assert result.params.get("color") == "RED"
 
     def test_existing_analysis_rule(self):
-        """'分析光纤3' still matches spanloss_analysis."""
+        """'分析光纤3' 仍匹配 spanloss_analysis。"""
         result = RuleEngine.match("分析光纤3")
         assert result is not None
         assert result.intent == "spanloss_analysis"
         assert result.fast_path_eligible is False
 
     def test_no_match_unrelated(self):
-        """Unrelated input still returns None."""
+        """无关输入仍返回 None。"""
         result = RuleEngine.match("今天天气怎么样")
         assert result is None

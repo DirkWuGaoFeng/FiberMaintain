@@ -1,11 +1,11 @@
 """
-Unit tests for Experience Store [改进清单 P1-A].
+体验库（Experience Store）单元测试 [改进清单 P1-A]。
 
-Tests:
-- Deterministic save rules (WARNING/CRITICAL only, non-empty fiber key)
-- Color-change-style dedup (same severity skipped, severity change written)
-- Query recency/limit and fiber_key normalization
-- analysis_expert deterministic write + prompt injection (LLM mocked)
+测试：
+- 确定性保存规则（仅 WARNING/CRITICAL，非空光纤键）
+- 变色式去重（同严重度跳过，严重度变化写入）
+- 查询时效性/条数限制与 fiber_key 归一化
+- analysis_expert 确定性写入 + prompt 注入（LLM 已 mock）
 """
 
 import pytest
@@ -49,7 +49,7 @@ class TestExperienceStore:
         assert store.fiber_key_of([1, 2, 3]) == "1,2,3"
         assert store.fiber_key_of([]) == ""
         assert store.fiber_key_of(None) == ""
-        # capped at 5 ids
+        # 最多保留 5 个 id
         assert store.fiber_key_of(list(range(10))) == "0,1,2,3,4"
 
     def test_query_empty_key(self, store):
@@ -57,18 +57,34 @@ class TestExperienceStore:
         assert store.latest_severity("") is None
 
 
+class TestQualityVeto:
+    """经验质量门禁（书籍 Ch3：保存≠学习，坏经验拒绝入库）。"""
+
+    def test_grounded_numbers_written(self, store):
+        # 结论数字可溯源到 evidence → 写入
+        assert store.save("5", "WARNING", "衰耗0.85dB需关注", ["spanloss=0.85"]) is True
+        assert len(store.query("5")) == 1
+
+    def test_hallucinated_number_vetoed(self, store):
+        # 结论数字无法溯源到 evidence → 拒绝写入
+        assert store.save("5", "WARNING", "衰耗0.88dB需关注", ["spanloss=0.85"]) is False
+        assert store.query("5") == []
+
+    def test_fiber_id_not_vetoed(self, store):
+        # 光纤 ID（良性数字 0-31）不触发 veto
+        assert store.save("5", "CRITICAL", "光纤5断纤", ["fiber_id=5"]) is True
+
+
 class TestAnalysisExpertDeterministicMemory:
-    """analysis_expert writes experience deterministically (no LLM agency)."""
+    """analysis_expert 确定性写入经验（无 LLM 自主性）。"""
 
     @pytest.mark.asyncio
-    async def test_warning_verdict_persisted_and_experience_injected(
-        self, tmp_path, monkeypatch
-    ):
+    async def test_warning_verdict_persisted_and_experience_injected(self, tmp_path, monkeypatch):
         from src.graph.state import AnalysisVerdict
         from src.nodes import analysis_expert as module
 
         store = ExperienceStore(db_path=str(tmp_path / "memory.db"))
-        # Pre-existing experience must be injected into the prompt context
+        # 已有经验必须注入提示词上下文
         store.save("5", "CRITICAL", "历史断纤经验")
 
         captured: dict = {}
@@ -94,10 +110,10 @@ class TestAnalysisExpertDeterministicMemory:
         }
         updates = await module.analysis_expert_node(state)
 
-        # Deterministic write happened
+        # 发生了确定性写入
         records = store.query("5")
         assert any(r["conclusion"] == "衰耗超标需检修" for r in records)
-        # Historical experience injected into prompt context
+        # 历史经验被注入 prompt 上下文
         assert "历史断纤经验" in captured["experience_history"]
         assert updates["analysis_verdict"]["severity"] == "WARNING"
 

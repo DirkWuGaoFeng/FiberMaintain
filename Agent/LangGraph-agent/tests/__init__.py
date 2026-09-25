@@ -1,1 +1,1 @@
-"""Tests for Fiber Maintenance Agent v7.1."""
+"""光纤维护智能体 v7.1 测试。"""

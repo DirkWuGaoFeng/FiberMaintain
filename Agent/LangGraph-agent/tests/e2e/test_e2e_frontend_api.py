@@ -1,42 +1,42 @@
 """
-End-to-end tests for Frontend API interaction [v7.1].
+针对前端 API 交互的端到端测试 [v7.1]。
 
-Verifies the Agent server's compatibility with the Vue frontend:
-- SSE streaming format (/fiber-agent/stream)
-- Invoke response structure
-- Error response format
+验证 Agent 服务器与 Vue 前端的兼容性：
+- SSE 流式格式 (/fiber-agent/stream)
+- Invoke 响应结构
+- 错误响应格式
 """
 
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, patch
-
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture
 def test_app():
-    """Create app for frontend API testing."""
+    """创建用于前端 API 测试的应用。"""
     from src.server import create_app
+
     return create_app()
 
 
 @pytest_asyncio.fixture
 async def api_client(test_app):
-    """Async client for API testing."""
+    """用于 API 测试的异步客户端。"""
     transport = ASGITransport(app=test_app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 
 
 class TestInvokeResponseFormat:
-    """Verify /invoke response matches frontend expectations."""
+    """验证 /invoke 响应符合前端预期。"""
 
     @pytest.mark.asyncio
     async def test_invoke_response_structure(self, api_client, monkeypatch):
-        """Response should have: result, processing_path, latency_ms, request_id."""
+        """响应应包含：result、processing_path、latency_ms、request_id。"""
         mock_result = {
             "final_output": "光纤1衰耗3.2dB，正常。",
             "processing_path": "fast",
@@ -47,12 +47,17 @@ class TestInvokeResponseFormat:
         mock_graph = AsyncMock()
         mock_graph.ainvoke = AsyncMock(return_value=mock_result)
 
-        with patch("src.graph.main_graph.get_graph", return_value=mock_graph), \
-             patch("src.observability.audit.write_request_audit", new_callable=AsyncMock):
-            resp = await api_client.post("/invoke", json={
-                "message": "查询光纤1的衰耗",
-                "thread_id": "frontend-test",
-            })
+        with (
+            patch("src.graph.main_graph.get_graph", return_value=mock_graph),
+            patch("src.observability.audit.write_request_audit", new_callable=AsyncMock),
+        ):
+            resp = await api_client.post(
+                "/invoke",
+                json={
+                    "message": "查询光纤1的衰耗",
+                    "thread_id": "frontend-test",
+                },
+            )
 
         assert resp.status_code == 200
         data = resp.json()
@@ -64,7 +69,7 @@ class TestInvokeResponseFormat:
 
     @pytest.mark.asyncio
     async def test_invoke_error_format(self, api_client):
-        """Error responses should have detail field."""
+        """错误响应应包含 detail 字段。"""
         with patch("src.graph.main_graph.get_graph") as mock_get_graph:
             mock_graph = AsyncMock()
             mock_get_graph.return_value = mock_graph
@@ -75,17 +80,17 @@ class TestInvokeResponseFormat:
 
 
 class TestFrontendDataAPIs:
-    """Verify data API endpoints used by frontend dashboard."""
+    """验证前端仪表盘使用的数据 API 端点。"""
 
     @pytest.mark.asyncio
     async def test_health_endpoint_for_status_widget(self, api_client):
-        """Frontend status widget calls /health."""
+        """前端状态组件调用 /health。"""
         resp = await api_client.get("/health")
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
     async def test_rules_reload_for_admin_panel(self, api_client):
-        """Admin panel can trigger rules reload."""
+        """管理面板可触发规则重载。"""
         resp = await api_client.post("/api/v1/rules/reload")
         assert resp.status_code == 200
         data = resp.json()
@@ -94,41 +99,41 @@ class TestFrontendDataAPIs:
 
 
 class TestSSEStreamFormat:
-    """Verify SSE streaming format compatibility with frontend."""
+    """验证与前端兼容的 SSE 流式格式。"""
 
     def test_frontend_expects_sse_data_prefix(self):
-        """Frontend parses lines starting with 'data: '."""
-        # Simulate SSE format that frontend expects
-        sse_line = "data: {\"type\": \"token\", \"content\": \"光纤\"}\n\n"
+        """前端解析以 'data: ' 开头的行。"""
+        # 模拟前端期望的 SSE 格式
+        sse_line = 'data: {"type": "token", "content": "光纤"}\n\n'
         assert sse_line.startswith("data: ")
         payload = sse_line.strip()[6:]
         data = json.loads(payload)
         assert data["type"] == "token"
 
     def test_frontend_done_signal(self):
-        """Frontend expects 'data: [DONE]' as termination signal."""
+        """前端期望以 'data: [DONE]' 作为终止信号。"""
         done_line = "data: [DONE]\n\n"
         payload = done_line.strip()[6:]
         assert payload == "[DONE]"
 
     def test_frontend_event_types(self):
-        """Verify expected event type structure."""
-        # Events the frontend handles
+        """验证预期的事件类型结构。"""
+        # 前端处理的事件
         event_types = ["token", "tool_start", "tool_end", "error", "done"]
         for evt_type in event_types:
             event = {"type": evt_type}
             serialized = f"data: {json.dumps(event)}\n\n"
-            # Verify parseable
+            # 验证可解析性
             parsed = json.loads(serialized.strip()[6:])
             assert parsed["type"] == evt_type
 
 
 class TestThreadContinuity:
-    """Verify thread_id based conversation continuity."""
+    """验证基于 thread_id 的对话连续性。"""
 
     @pytest.mark.asyncio
     async def test_thread_id_passed_to_graph(self, api_client, monkeypatch):
-        """thread_id from request should be passed to graph config."""
+        """请求中的 thread_id 应传递给 graph 配置。"""
         captured_config = {}
 
         mock_result = {
@@ -147,19 +152,24 @@ class TestThreadContinuity:
         mock_graph = AsyncMock()
         mock_graph.ainvoke = capture_invoke
 
-        with patch("src.graph.main_graph.get_graph", return_value=mock_graph), \
-             patch("src.observability.audit.write_request_audit", new_callable=AsyncMock):
-            resp = await api_client.post("/invoke", json={
-                "message": "查询光纤1的衰耗",
-                "thread_id": "my-session-123",
-            })
+        with (
+            patch("src.graph.main_graph.get_graph", return_value=mock_graph),
+            patch("src.observability.audit.write_request_audit", new_callable=AsyncMock),
+        ):
+            resp = await api_client.post(
+                "/invoke",
+                json={
+                    "message": "查询光纤1的衰耗",
+                    "thread_id": "my-session-123",
+                },
+            )
 
         assert resp.status_code == 200
         assert captured_config.get("configurable", {}).get("thread_id") == "my-session-123"
 
     @pytest.mark.asyncio
     async def test_default_thread_id(self, api_client, monkeypatch):
-        """Missing thread_id should use 'default'."""
+        """缺少 thread_id 时应使用 'default'。"""
         captured_config = {}
 
         mock_result = {
@@ -178,11 +188,16 @@ class TestThreadContinuity:
         mock_graph = AsyncMock()
         mock_graph.ainvoke = capture_invoke
 
-        with patch("src.graph.main_graph.get_graph", return_value=mock_graph), \
-             patch("src.observability.audit.write_request_audit", new_callable=AsyncMock):
-            resp = await api_client.post("/invoke", json={
-                "message": "查询光纤1的衰耗",
-            })
+        with (
+            patch("src.graph.main_graph.get_graph", return_value=mock_graph),
+            patch("src.observability.audit.write_request_audit", new_callable=AsyncMock),
+        ):
+            resp = await api_client.post(
+                "/invoke",
+                json={
+                    "message": "查询光纤1的衰耗",
+                },
+            )
 
         assert resp.status_code == 200
         assert captured_config.get("configurable", {}).get("thread_id") == "default"

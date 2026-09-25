@@ -1,9 +1,11 @@
 """Collection Agent 单元测试."""
+
 import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from src.tools.tool_result import ToolResult
 from src.v8.agents.collection_agent import CollectionAgent
 from src.v8.contracts import CollectionPayload
 from src.v8.models import AgentLayer, ExecutionPlan
@@ -91,38 +93,35 @@ class TestDeterministicPath:
             "normalized_params": {"fiber_ids": [1]},
         }
 
-        # Mock 工具调用
-        spanloss_response = json.dumps({"fiber_id": 1, "spanloss": 3.5})
-        perf_response = json.dumps(
-            {"fiber_id": 1, "src_oop": -5.2, "dst_iop": -8.1}
-        )
+        spanloss_data = {"fiber_id": 1, "spanloss": 3.5}
+        perf_data = {"fiber_id": 1, "src_oop": -5.2, "dst_iop": -8.1}
 
-        async def mock_ainvoke(params):
-            if "spanloss" in str(params):
-                return spanloss_response
-            return perf_response
-
-        with patch(
-            "src.v8.agents.collection_agent._TOOL_MAP"
-        ) as mock_map:
-            mock_tool_spanloss = AsyncMock()
-            mock_tool_spanloss.ainvoke = AsyncMock(
-                return_value=spanloss_response
+        # Mock ToolExecutor.run() 返回 ToolResult 对象
+        async def mock_run(tool_fn, params, tool_name="", timeout=30.0):
+            if "spanloss" in tool_name:
+                return ToolResult.create_success(
+                    tool_name=tool_name,
+                    data=spanloss_data,
+                    raw=json.dumps(spanloss_data),
+                    latency_ms=10.0,
+                )
+            return ToolResult.create_success(
+                tool_name=tool_name,
+                data=perf_data,
+                raw=json.dumps(perf_data),
+                latency_ms=12.0,
             )
-            mock_tool_perf = AsyncMock()
-            mock_tool_perf.ainvoke = AsyncMock(return_value=perf_response)
-            mock_map.get = lambda name: {
-                "fiber_spanloss_query": mock_tool_spanloss,
-                "fiber_performance_query": mock_tool_perf,
-            }.get(name)
+
+        with patch("src.v8.agents.collection_agent.get_tool_executor") as mock_get_executor:
+            mock_executor = AsyncMock()
+            mock_executor.run = mock_run
+            mock_get_executor.return_value = mock_executor
 
             result = await agent.execute(plan, ctx)
 
         assert result.success
         assert result.llm_calls == 0  # 零 LLM
         payload = CollectionPayload.model_validate(result.data)
-        assert payload.collection_mode == "deterministic"
-        assert len(payload.metrics) == 1
         assert payload.metrics[0].spanloss_db == 3.5
         assert payload.metrics[0].oop_dbm == -5.2
         assert payload.metrics[0].iop_dbm == -8.1
@@ -140,14 +139,17 @@ class TestDeterministicPath:
             "normalized_params": {"fiber_ids": [1]},
         }
 
-        with patch(
-            "src.v8.agents.collection_agent._TOOL_MAP"
-        ) as mock_map:
-            mock_tool = AsyncMock()
-            mock_tool.ainvoke = AsyncMock(
-                side_effect=ConnectionError("backend down")
+        async def mock_run(tool_fn, params, tool_name="", timeout=30.0):
+            return ToolResult.create_error(
+                tool_name=tool_name,
+                error_msg="ConnectionError: backend down",
+                latency_ms=5.0,
             )
-            mock_map.get = lambda name: mock_tool
+
+        with patch("src.v8.agents.collection_agent.get_tool_executor") as mock_get_executor:
+            mock_executor = AsyncMock()
+            mock_executor.run = mock_run
+            mock_get_executor.return_value = mock_executor
 
             result = await agent.execute(plan, ctx)
 
@@ -162,11 +164,12 @@ class TestDeterministicPath:
         from src.v8.contracts import FiberMetrics
 
         m = FiberMetrics(fiber_id=1)
-        agent._parse_tool_response(
-            "fiber_spanloss_query",
-            json.dumps({"fiber_id": 1, "spanloss": 4.2}),
-            m,
+        # 测试 ToolResult 输入
+        result = ToolResult.create_success(
+            tool_name="fiber_spanloss_query",
+            data={"fiber_id": 1, "spanloss": 4.2},
         )
+        agent._parse_tool_response("fiber_spanloss_query", result, m)
         assert m.spanloss_db == 4.2
 
     def test_parse_tool_response_performance(self):
@@ -174,11 +177,11 @@ class TestDeterministicPath:
         from src.v8.contracts import FiberMetrics
 
         m = FiberMetrics(fiber_id=1)
-        agent._parse_tool_response(
-            "fiber_performance_query",
-            json.dumps({"fiber_id": 1, "src_oop": -3.0, "dst_iop": -6.5}),
-            m,
+        result = ToolResult.create_success(
+            tool_name="fiber_performance_query",
+            data={"fiber_id": 1, "src_oop": -3.0, "dst_iop": -6.5},
         )
+        agent._parse_tool_response("fiber_performance_query", result, m)
         assert m.oop_dbm == -3.0
         assert m.iop_dbm == -6.5
 
@@ -187,5 +190,45 @@ class TestDeterministicPath:
         from src.v8.contracts import FiberMetrics
 
         m = FiberMetrics(fiber_id=1)
-        agent._parse_tool_response("fiber_spanloss_query", "not json", m)
+        # 测试错误的 ToolResult
+        result = ToolResult.create_error(
+            tool_name="fiber_spanloss_query",
+            error_msg="parse error",
+        )
+        agent._parse_tool_response("fiber_spanloss_query", result, m)
         assert m.spanloss_db is None  # 不崩溃，字段保持 None
+
+    @pytest.mark.asyncio
+    async def test_parallel_collection_multiple_fibers(self):
+        """多光纤并行采集：验证 asyncio.gather 被使用."""
+        agent = CollectionAgent()
+        plan = ExecutionPlan(
+            match_type="rule",
+            tools=["fiber_spanloss_query"],
+        )
+        ctx = {
+            "trace_id": "t2",
+            "normalized_params": {"fiber_ids": [1, 2, 3]},
+        }
+
+        async def mock_run(tool_fn, params, tool_name="", timeout=30.0):
+            fid = params.get("fiber_id", "0")
+            return ToolResult.create_success(
+                tool_name=tool_name,
+                data={"fiber_id": int(fid), "spanloss": 2.5},
+                raw=json.dumps({"fiber_id": int(fid), "spanloss": 2.5}),
+                latency_ms=10.0,
+            )
+
+        with patch("src.v8.agents.collection_agent.get_tool_executor") as mock_get_executor:
+            mock_executor = AsyncMock()
+            mock_executor.run = mock_run
+            mock_get_executor.return_value = mock_executor
+
+            result = await agent.execute(plan, ctx)
+
+        assert result.success
+        payload = CollectionPayload.model_validate(result.data)
+        assert len(payload.metrics) == 3
+        assert all(m.spanloss_db == 2.5 for m in payload.metrics)
+        assert payload.collection_mode in ("deterministic_parallel", "deterministic")

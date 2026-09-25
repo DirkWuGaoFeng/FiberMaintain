@@ -1,20 +1,18 @@
 """
-Unit tests for Rule Engine [v7.1].
+规则引擎单元测试 [v7.1]。
 
-Tests:
-- Rule matching accuracy (25 rules)
-- Parameter extraction
-- Fast path eligibility
-- Confidence scoring
+测试：
+- 规则匹配准确率（25 条规则）
+- 参数提取
+- 快速路径资格
+- 置信度评分
 """
-
-import pytest
 
 from src.nodes.rule_engine import RuleEngine
 
 
 class TestRuleEngine:
-    """Test L0 Rule Engine."""
+    """测试 L0 规则引擎。"""
 
     def test_single_fiber_spanloss_query(self):
         """R001: 查询光纤衰耗"""
@@ -97,31 +95,31 @@ class TestRuleEngine:
         assert result.fast_path_eligible is False
 
     def test_no_match_returns_none(self):
-        """Unrecognized input returns None."""
+        """无法识别的输入返回 None。"""
         result = RuleEngine.match("今天天气怎么样")
         assert result is None
 
     def test_fib_format_extraction(self):
-        """Test FIB-XXXX format extraction."""
+        """测试 FIB-XXXX 格式提取。"""
         result = RuleEngine.match("查询FIB-0012的衰耗")
         assert result is not None
         assert result.params.get("fiber_id") == 12
 
     def test_fast_path_simple_query(self):
-        """Simple single-fiber queries are fast_path eligible."""
+        """简单的单纤查询具备快速路径资格。"""
         result = RuleEngine.match("查光纤1的衰耗")
         assert result is not None
         assert result.fast_path_eligible is True
 
     def test_complex_query_not_fast_path(self):
-        """Analysis/diagnosis queries are NOT fast_path eligible."""
+        """分析/诊断查询不具备 fast_path 资格。"""
         result = RuleEngine.match("分析光纤3")
         assert result is not None
         assert result.intent == "spanloss_analysis"
         assert result.fast_path_eligible is False
 
     def test_color_diagnosis_not_fast_path(self):
-        """Color diagnosis requires multi-step analysis."""
+        """颜色诊断需要多步分析。"""
         result = RuleEngine.match("光纤1为什么变红")
         assert result is not None
         assert result.intent == "color_diagnosis"
@@ -129,27 +127,27 @@ class TestRuleEngine:
 
 
 class TestRuleEngineEdgeCases:
-    """Edge case tests."""
+    """边界情况测试。"""
 
     def test_empty_input(self):
         result = RuleEngine.match("")
         assert result is None
 
     def test_very_long_input(self):
-        """Long input should still work (truncated internally)."""
+        """长输入仍应正常工作（内部会截断）。"""
         long_input = "查询光纤1的衰耗" + "x" * 2000
         result = RuleEngine.match(long_input)
-        # Should match the spanloss pattern at the beginning
+        # 应匹配开头处的 spanloss 模式
         assert result is not None
 
     def test_special_characters(self):
-        """Special characters should not crash."""
+        """特殊字符不应导致崩溃。"""
         result = RuleEngine.match("查询光纤@#$%的衰耗")
-        # Should not raise exception, may or may not match
+        # 不应抛出异常，可以匹配也可以不匹配
         assert True
 
     def test_health_check(self):
-        """R080: System health check."""
+        """R080: 系统健康检查。"""
         result = RuleEngine.match("系统健康检查")
         assert result is not None
         assert result.intent == "health_check"

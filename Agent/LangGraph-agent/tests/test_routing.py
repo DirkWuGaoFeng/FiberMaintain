@@ -1,17 +1,15 @@
 """
-Unit tests for Routing functions [v7.1].
+路由函数单元测试 [v7.1]。
 
-Tests:
-- route_after_rule_engine (3-way)
-- route_after_param_gate (2-way)
-- route_by_intent (5-way)
-- route_after_analysis (4-way + termination safeguards)
-- route_after_narrator_validation (2-way)
-- route_after_evaluation (2-way)
+测试：
+- route_after_rule_engine（3 路）
+- route_after_param_gate（2 路）
+- route_by_intent（5 路）
+- route_after_analysis（4 路 + 终止保护）
+- route_after_narrator_validation（2 路）
+- route_after_evaluation（2 路）
 - compute_action_signature
 """
-
-import pytest
 
 from src.graph.routing import (
     compute_action_signature,
@@ -24,7 +22,7 @@ from src.graph.routing import (
 
 
 class TestRouteAfterRuleEngine:
-    """Test rule engine routing."""
+    """测试规则引擎路由。"""
 
     def test_fast_path(self):
         state = {"rule_match": {"fast_path_eligible": True, "confidence": 0.95}}
@@ -39,14 +37,14 @@ class TestRouteAfterRuleEngine:
         assert route_after_rule_engine(state) == "rule_miss"
 
     def test_low_confidence_miss(self):
-        """Low confidence match still routes to rule_hit_complex (confidence handled in rule_engine)."""
+        """低置信度匹配仍路由到 rule_hit_complex（置信度在 rule_engine 中处理）。"""
         state = {"rule_match": {"fast_path_eligible": False, "confidence": 0.3}}
-        # Rule engine handles confidence internally; routing just checks match existence
+        # 规则引擎内部处理置信度；路由仅检查匹配是否存在
         assert route_after_rule_engine(state) == "rule_hit_complex"
 
 
 class TestRouteAfterParamGate:
-    """Test param gate routing."""
+    """测试参数门路由。"""
 
     def test_params_ok(self):
         state = {"normalized_params": {"fiber_ids": [1], "parse_failures": []}}
@@ -58,7 +56,7 @@ class TestRouteAfterParamGate:
 
 
 class TestRouteByIntent:
-    """Test intent routing."""
+    """测试意图路由。"""
 
     def test_data_query(self):
         state = {"intent": "single_query"}
@@ -82,7 +80,7 @@ class TestRouteByIntent:
 
 
 class TestRouteAfterAnalysis:
-    """Test analysis routing with four termination safeguards."""
+    """测试带四个终止保护的分析路由。"""
 
     def test_need_more_data(self):
         state = {
@@ -104,7 +102,7 @@ class TestRouteAfterAnalysis:
             "max_llm_calls": 10,
             "no_progress_count": 0,
         }
-        # Should NOT return need_more_data
+        # 不应返回 need_more_data
         result = route_after_analysis(state)
         assert result != "need_more_data"
 
@@ -147,7 +145,7 @@ class TestRouteAfterAnalysis:
 
 
 class TestRouteAfterNarratorValidation:
-    """Test narrator validation routing."""
+    """测试叙述器校验路由。"""
 
     def test_pass(self):
         state = {"narrator_validation_passed": True}
@@ -159,10 +157,10 @@ class TestRouteAfterNarratorValidation:
 
 
 class TestRouteAfterAnalysisDegradation:
-    """Test degradation and tool-fail paths in analysis routing."""
+    """测试分析路由中的降级与工具失败路径。"""
 
     def test_degradation_level_2_forces_degraded(self):
-        """Degradation >= 2 should force 'degraded' path regardless of verdict."""
+        """降级等级 >= 2 应强制走 'degraded' 路径，无论判定结果如何。"""
         state = {
             "analysis_verdict": {"need_more_data": True, "additional_query": {"tool": "x"}},
             "loop_count": 0,
@@ -175,7 +173,7 @@ class TestRouteAfterAnalysisDegradation:
         assert route_after_analysis(state) == "degraded"
 
     def test_degradation_level_4_forces_degraded(self):
-        """Degradation level 4 (offline) forces degraded."""
+        """降级等级 4（离线）强制走 degraded。"""
         state = {
             "analysis_verdict": None,
             "loop_count": 0,
@@ -188,7 +186,7 @@ class TestRouteAfterAnalysisDegradation:
         assert route_after_analysis(state) == "degraded"
 
     def test_tool_all_fail_circuit_breaker(self):
-        """All tool calls failed → degraded path."""
+        """所有工具调用失败 → 降级路径。"""
         state = {
             "analysis_verdict": {"need_more_data": True, "additional_query": {"tool": "x"}},
             "loop_count": 0,
@@ -202,7 +200,7 @@ class TestRouteAfterAnalysisDegradation:
         assert route_after_analysis(state) == "degraded"
 
     def test_partial_tool_failure_not_degraded(self):
-        """Partial failures (some success) should NOT trigger degraded."""
+        """部分失败（部分成功）不应触发 degraded。"""
         state = {
             "analysis_verdict": {"need_more_data": False, "severity": "NORMAL"},
             "loop_count": 0,
@@ -219,34 +217,38 @@ class TestRouteAfterAnalysisDegradation:
 
 
 class TestRouteAfterEvaluation:
-    """Test report evaluation reflection routing."""
+    """测试报告评估反思路由。"""
 
     def test_pass_when_evaluation_passed(self):
         from src.graph.routing import route_after_evaluation
+
         state = {"report_eval": {"passed": True, "refinement_count": 0}}
         assert route_after_evaluation(state) == "pass"
 
     def test_refine_when_not_passed(self):
         from src.graph.routing import route_after_evaluation
+
         state = {"report_eval": {"passed": False, "refinement_count": 0}}
         assert route_after_evaluation(state) == "refine"
 
     def test_force_pass_after_one_refinement(self):
         from src.graph.routing import route_after_evaluation
+
         state = {"report_eval": {"passed": False, "refinement_count": 1}}
         assert route_after_evaluation(state) == "pass"
 
     def test_empty_eval_defaults_pass(self):
         from src.graph.routing import route_after_evaluation
+
         state = {"report_eval": {}}
         assert route_after_evaluation(state) == "pass"
 
 
 class TestExitLoopIntentRouting:
-    """Test _exit_loop intent-based routing decisions."""
+    """测试 _exit_loop 基于意图的路由决策。"""
 
     def test_simple_intent_direct_narrate(self):
-        """Simple query intents should exit to direct_narrate."""
+        """简单查询意图应退出到 direct_narrate。"""
         state = {
             "analysis_verdict": {"need_more_data": False, "severity": "NORMAL"},
             "loop_count": 3,
@@ -259,7 +261,7 @@ class TestExitLoopIntentRouting:
         assert route_after_analysis(state) == "direct_narrate"
 
     def test_complex_intent_generate_report(self):
-        """Complex analysis intents should exit to generate_report."""
+        """复杂分析意图应退出到 generate_report。"""
         state = {
             "analysis_verdict": {"need_more_data": False, "severity": "WARNING"},
             "loop_count": 3,
@@ -273,7 +275,7 @@ class TestExitLoopIntentRouting:
 
 
 class TestComputeActionSignature:
-    """Test action signature computation."""
+    """测试动作签名计算。"""
 
     def test_deterministic(self):
         sig1 = compute_action_signature("tool_a", "observation_1")
@@ -286,9 +288,9 @@ class TestComputeActionSignature:
         assert sig1 != sig2
 
     def test_truncation_at_500_chars(self):
-        """Observation longer than 500 chars is truncated for hashing."""
+        """超过 500 个字符的观察被截断后再用于哈希。"""
         long_obs = "x" * 1000
         sig = compute_action_signature("tool", long_obs)
-        # Same result with truncated input
+        # 与截断后的输入结果一致
         sig2 = compute_action_signature("tool", "x" * 500)
         assert sig == sig2

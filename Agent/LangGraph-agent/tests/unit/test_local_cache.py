@@ -1,13 +1,13 @@
 """
-Unit tests for Local Cache [v7.1].
+本地缓存单元测试 [v7.1]。
 
-Tests:
-- set/get basic operations
-- TTL expiration
-- get_with_staleness (L4 degradation)
+测试：
+- set/get 基本操作
+- TTL 过期
+- get_with_staleness（L4 降级）
 - cleanup_expired
-- Stats tracking (hit/miss)
-- query_keys pattern matching
+- 命中/未命中统计
+- query_keys 模式匹配
 """
 
 import time
@@ -19,7 +19,7 @@ from src.cache.local_cache import LocalCache
 
 @pytest.fixture
 async def cache(tmp_path):
-    """Create an initialized cache instance with isolated DB."""
+    """创建带独立 DB 的已初始化缓存实例。"""
     c = LocalCache(db_path=str(tmp_path / "test_cache.db"))
     await c.initialize()
     yield c
@@ -27,24 +27,24 @@ async def cache(tmp_path):
 
 
 class TestCacheBasicOps:
-    """Basic set/get operations."""
+    """基本 set/get 操作。"""
 
     @pytest.mark.asyncio
     async def test_set_and_get(self, cache):
-        """Set a value and retrieve it."""
+        """设置值并取回。"""
         await cache.set("key1", {"data": "hello"})
         result = await cache.get("key1")
         assert result == {"data": "hello"}
 
     @pytest.mark.asyncio
     async def test_get_nonexistent_key(self, cache):
-        """Get for missing key returns None."""
+        """查询不存在的键返回 None。"""
         result = await cache.get("nonexistent")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_set_overwrite(self, cache):
-        """Setting same key overwrites previous value."""
+        """重复设置相同键会覆盖旧值。"""
         await cache.set("key1", {"v": 1})
         await cache.set("key1", {"v": 2})
         result = await cache.get("key1")
@@ -52,7 +52,7 @@ class TestCacheBasicOps:
 
     @pytest.mark.asyncio
     async def test_set_various_types(self, cache):
-        """Cache should handle different JSON-serializable types."""
+        """缓存应能处理不同的 JSON 可序列化类型。"""
         await cache.set("str", "hello")
         await cache.set("num", 42)
         await cache.set("list", [1, 2, 3])
@@ -65,7 +65,7 @@ class TestCacheBasicOps:
 
     @pytest.mark.asyncio
     async def test_delete(self, cache):
-        """Delete removes the entry."""
+        """Delete 移除条目。"""
         await cache.set("key1", "value1")
         await cache.delete("key1")
         result = await cache.get("key1")
@@ -73,45 +73,45 @@ class TestCacheBasicOps:
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent(self, cache):
-        """Deleting non-existent key should not error."""
-        await cache.delete("nonexistent")  # Should not raise
+        """删除不存在的键不应报错。"""
+        await cache.delete("nonexistent")  # 不应抛异常
 
 
 class TestCacheTTL:
-    """TTL expiration tests."""
+    """TTL 过期测试。"""
 
     @pytest.mark.asyncio
     async def test_ttl_expiration(self, cache):
-        """Entry should expire after TTL."""
+        """条目在 TTL 后应过期。"""
         await cache.set("short_lived", "data", ttl=1)
-        # Immediately accessible
+        # 可立即访问
         assert await cache.get("short_lived") == "data"
-        # Wait for expiration
+        # 等待过期
         time.sleep(1.1)
         assert await cache.get("short_lived") is None
 
     @pytest.mark.asyncio
     async def test_long_ttl_not_expired(self, cache):
-        """Entry with long TTL should remain accessible."""
+        """长 TTL 的条目应仍可访问。"""
         await cache.set("long_lived", "data", ttl=3600)
         result = await cache.get("long_lived")
         assert result == "data"
 
     @pytest.mark.asyncio
     async def test_default_ttl_applied(self, cache):
-        """TTL=0 should use default (300s)."""
+        """TTL=0 应使用默认值（300s）。"""
         await cache.set("default_ttl", "data", ttl=0)
-        # Should be accessible (default TTL is 300s)
+        # 应可访问（默认 TTL 为 300s）
         result = await cache.get("default_ttl")
         assert result == "data"
 
 
 class TestCacheStaleness:
-    """get_with_staleness for L4 degradation."""
+    """get_with_staleness 用于 L4 降级。"""
 
     @pytest.mark.asyncio
     async def test_fresh_data_not_stale(self, cache):
-        """Fresh data should have stale=False."""
+        """新鲜数据应为 stale=False。"""
         await cache.set("key1", {"v": 1}, ttl=300)
         result = await cache.get_with_staleness("key1")
         assert result is not None
@@ -121,7 +121,7 @@ class TestCacheStaleness:
 
     @pytest.mark.asyncio
     async def test_expired_data_is_stale(self, cache):
-        """Expired data should have stale=True but still returned."""
+        """过期数据应为 stale=True 但仍返回。"""
         await cache.set("key1", {"v": 1}, ttl=1)
         time.sleep(1.1)
         result = await cache.get_with_staleness("key1", max_stale_seconds=600)
@@ -131,26 +131,26 @@ class TestCacheStaleness:
 
     @pytest.mark.asyncio
     async def test_too_stale_returns_none(self, cache):
-        """Data older than max_stale_seconds returns None."""
+        """早于 max_stale_seconds 的数据返回 None。"""
         await cache.set("key1", {"v": 1}, ttl=1)
         time.sleep(1.1)
-        # max_stale_seconds=0 means nothing is fresh enough
+        # max_stale_seconds=0 表示没有任何数据足够新鲜
         result = await cache.get_with_staleness("key1", max_stale_seconds=0)
         assert result is None
 
     @pytest.mark.asyncio
     async def test_nonexistent_key_returns_none(self, cache):
-        """get_with_staleness for missing key returns None."""
+        """get_with_staleness 对不存在的键返回 None。"""
         result = await cache.get_with_staleness("nonexistent")
         assert result is None
 
 
 class TestCacheCleanup:
-    """Cleanup expired entries."""
+    """清理过期条目。"""
 
     @pytest.mark.asyncio
     async def test_cleanup_removes_expired(self, cache):
-        """cleanup_expired removes entries past TTL."""
+        """cleanup_expired 移除超过 TTL 的条目。"""
         await cache.set("expired1", "a", ttl=1)
         await cache.set("expired2", "b", ttl=1)
         await cache.set("fresh", "c", ttl=3600)
@@ -159,23 +159,23 @@ class TestCacheCleanup:
         removed = await cache.cleanup_expired()
         assert removed == 2
 
-        # Fresh entry still accessible
+        # 新条目仍可访问
         assert await cache.get("fresh") == "c"
 
     @pytest.mark.asyncio
     async def test_cleanup_no_expired(self, cache):
-        """Cleanup with no expired entries returns 0."""
+        """无过期条目时清理应返回 0。"""
         await cache.set("key1", "a", ttl=3600)
         removed = await cache.cleanup_expired()
         assert removed == 0
 
 
 class TestCacheStats:
-    """Hit/miss statistics."""
+    """命中/未命中统计。"""
 
     @pytest.mark.asyncio
     async def test_stats_initial(self, cache):
-        """Initial stats should be zero."""
+        """初始统计应为 0。"""
         stats = await cache.get_stats()
         assert stats["hits"] == 0
         assert stats["misses"] == 0
@@ -183,11 +183,11 @@ class TestCacheStats:
 
     @pytest.mark.asyncio
     async def test_stats_after_operations(self, cache):
-        """Stats should track hits and misses."""
+        """统计应能跟踪命中与未命中次数。"""
         await cache.set("key1", "value1")
-        await cache.get("key1")  # hit
-        await cache.get("key1")  # hit
-        await cache.get("missing")  # miss
+        await cache.get("key1")  # 命中
+        await cache.get("key1")  # 命中
+        await cache.get("missing")  # 未命中
 
         stats = await cache.get_stats()
         assert stats["hits"] == 2
@@ -196,11 +196,11 @@ class TestCacheStats:
 
 
 class TestCacheQueryKeys:
-    """Key pattern query."""
+    """键模式查询。"""
 
     @pytest.mark.asyncio
     async def test_query_all_keys(self, cache):
-        """Query with % returns all keys."""
+        """使用 % 查询返回所有键。"""
         await cache.set("fiber:1", "a")
         await cache.set("fiber:2", "b")
         await cache.set("alarm:1", "c")
@@ -210,7 +210,7 @@ class TestCacheQueryKeys:
 
     @pytest.mark.asyncio
     async def test_query_pattern_filter(self, cache):
-        """Query with pattern filters results."""
+        """带模式的查询会过滤结果。"""
         await cache.set("fiber:1", "a")
         await cache.set("fiber:2", "b")
         await cache.set("alarm:1", "c")
@@ -222,7 +222,7 @@ class TestCacheQueryKeys:
 
     @pytest.mark.asyncio
     async def test_query_keys_shows_expiry_info(self, cache):
-        """Query results include age and expiry info."""
+        """查询结果包含年龄与过期信息。"""
         await cache.set("key1", "val", ttl=300)
         keys = await cache.query_keys("key1")
         assert len(keys) == 1
@@ -233,18 +233,18 @@ class TestCacheQueryKeys:
 
 
 class TestCacheUninitialized:
-    """Behavior when cache is not initialized."""
+    """缓存未初始化时的行为。"""
 
     @pytest.mark.asyncio
     async def test_get_without_init(self):
-        """Get on uninitialized cache returns None."""
+        """未初始化缓存上的 get 返回 None。"""
         cache = LocalCache(db_path="/nonexistent/path.db")
-        # Don't call initialize()
+        # 不调用 initialize()
         result = await cache.get("key")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_set_without_init(self):
-        """Set on uninitialized cache should not raise."""
+        """未初始化缓存上的 set 不应抛异常。"""
         cache = LocalCache(db_path="/nonexistent/path.db")
-        await cache.set("key", "value")  # Should not raise
+        await cache.set("key", "value")  # 不应抛异常

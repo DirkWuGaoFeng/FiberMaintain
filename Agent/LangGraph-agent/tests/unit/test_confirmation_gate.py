@@ -1,11 +1,11 @@
 """
-Unit tests for write-operation Confirmation Gate [改进清单 P1-B].
+写操作确认门控（Confirmation Gate）单元测试 [改进清单 P1-B]。
 
-Tests:
-- ConfirmationGate lifecycle: request → confirm one-shot consume
-- TTL expiry, unknown token, pending queue cap
-- pull_call_create/cancel gating: no token never reaches the backend,
-  valid token executes, mismatched params rejected
+测试：
+- ConfirmationGate 生命周期：请求 → 确认一次性消费
+- TTL 过期、未知 token、待处理队列上限
+- pull_call_create/cancel 门控：无 token 不会到达后端，
+  有效 token 执行，参数不匹配被拒绝
 """
 
 import json
@@ -70,11 +70,7 @@ class TestPullCallGating:
 
     async def test_create_without_token_only_registers(self, wired):
         gate, post, _ = wired
-        result = json.loads(
-            await pullcall_tools.pull_call_create.ainvoke(
-                {"fiber_id": 5, "test_type": "OTDR"}
-            )
-        )
+        result = json.loads(await pullcall_tools.pull_call_create.ainvoke({"fiber_id": 5, "test_type": "OTDR"}))
         assert result["status"] == "pending_confirmation"
         assert result["confirm_token"]
         post.assert_not_called()  # 无 token 不打后端
@@ -82,11 +78,7 @@ class TestPullCallGating:
 
     async def test_create_with_valid_token_executes(self, wired):
         gate, post, _ = wired
-        pending = json.loads(
-            await pullcall_tools.pull_call_create.ainvoke(
-                {"fiber_id": 5, "test_type": "OTDR"}
-            )
-        )
+        pending = json.loads(await pullcall_tools.pull_call_create.ainvoke({"fiber_id": 5, "test_type": "OTDR"}))
         result = json.loads(
             await pullcall_tools.pull_call_create.ainvoke(
                 {"fiber_id": 5, "test_type": "OTDR", "confirm_token": pending["confirm_token"]}
@@ -98,11 +90,7 @@ class TestPullCallGating:
 
     async def test_create_with_tampered_params_rejected(self, wired):
         gate, post, _ = wired
-        pending = json.loads(
-            await pullcall_tools.pull_call_create.ainvoke(
-                {"fiber_id": 5, "test_type": "OTDR"}
-            )
-        )
+        pending = json.loads(await pullcall_tools.pull_call_create.ainvoke({"fiber_id": 5, "test_type": "OTDR"}))
         # 篡改 fiber_id 复用令牌
         result = json.loads(
             await pullcall_tools.pull_call_create.ainvoke(
@@ -114,19 +102,13 @@ class TestPullCallGating:
 
     async def test_create_with_invalid_token_rejected(self, wired):
         _, post, _ = wired
-        result = json.loads(
-            await pullcall_tools.pull_call_create.ainvoke(
-                {"fiber_id": 5, "confirm_token": "bogus"}
-            )
-        )
+        result = json.loads(await pullcall_tools.pull_call_create.ainvoke({"fiber_id": 5, "confirm_token": "bogus"}))
         assert result["error_code"] == "CONFIRMATION_INVALID"
         post.assert_not_called()
 
     async def test_cancel_gate_flow(self, wired):
         gate, _, delete = wired
-        pending = json.loads(
-            await pullcall_tools.pull_call_cancel.ainvoke({"session_id": "S-1"})
-        )
+        pending = json.loads(await pullcall_tools.pull_call_cancel.ainvoke({"session_id": "S-1"}))
         assert pending["status"] == "pending_confirmation"
         delete.assert_not_called()
 
