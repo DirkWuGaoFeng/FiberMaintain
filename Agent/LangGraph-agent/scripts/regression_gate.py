@@ -14,6 +14,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Windows 控制台/ git 钩子环境默认用 GBK 编码 stdout，本脚本的 emoji 日志
+# （🔍/❌/✅/ℹ️）会触发 UnicodeEncodeError 导致门禁误报失败。强制 UTF-8，
+# errors="replace" 兜底，保证门禁逻辑本身不受终端编码影响。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # 触发回归的目录/文件
