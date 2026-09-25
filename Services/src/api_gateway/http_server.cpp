@@ -152,6 +152,11 @@ MHD_Result HttpServer::process_request(struct MHD_Connection* connection,
         return send_response(connection, MHD_HTTP_OK, "");
     }
     
+    // 读取 X-Trace-Id 头（用于跨服务跟踪透传）
+    const char* trace_id_raw = MHD_lookup_connection_value(connection, MHD_HEADER_KIND, "X-Trace-Id");
+    std::string trace_id = trace_id_raw ? trace_id_raw : "";
+    std::string trace_prefix = trace_id.empty() ? "" : "[trace:" + trace_id + "] ";
+    
     // 记录请求入口（realtime 接口使用 trace 级别，避免定时调用冲刷日志）
     std::string method_str(method);
     std::string url_str(url);
@@ -159,15 +164,15 @@ MHD_Result HttpServer::process_request(struct MHD_Connection* connection,
     if (method_str == "POST" && !post_body.empty()) {
         std::string body_preview = post_body.size() > 200 ? post_body.substr(0, 200) + "..." : post_body;
         if (is_realtime) {
-            Logger::instance().trace("[HTTP] --> {} {} body={}", method_str, url_str, body_preview);
+            Logger::instance().trace("[HTTP] {}--> {} {} body={}", trace_prefix, method_str, url_str, body_preview);
         } else {
-            Logger::instance().info("[HTTP] --> {} {} body={}", method_str, url_str, body_preview);
+            Logger::instance().info("[HTTP] {}--> {} {} body={}", trace_prefix, method_str, url_str, body_preview);
         }
     } else {
         if (is_realtime) {
-            Logger::instance().trace("[HTTP] --> {} {}", method_str, url_str);
+            Logger::instance().trace("[HTTP] {}--> {} {}", trace_prefix, method_str, url_str);
         } else {
-            Logger::instance().info("[HTTP] --> {} {}", method_str, url_str);
+            Logger::instance().info("[HTTP] {}--> {} {}", trace_prefix, method_str, url_str);
         }
     }
     
@@ -343,15 +348,15 @@ MHD_Result HttpServer::process_request(struct MHD_Connection* connection,
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
     std::string summary = "size=" + std::to_string(body.size()) + " elapsed=" + std::to_string(elapsed_ms) + "ms";
     if (status >= 400) {
-        Logger::instance().warn("[HTTP] <-- {} {} status={} {}",
-                                method_str, url_str, status, summary);
+        Logger::instance().warn("[HTTP] {}<-- {} {} {}",
+                                trace_prefix, method_str, url_str, "status=" + std::to_string(status) + " " + summary);
     } else {
         if (is_realtime) {
-            Logger::instance().trace("[HTTP] <-- {} {} status={} {}",
-                                     method_str, url_str, status, summary);
+            Logger::instance().trace("[HTTP] {}<-- {} {} {}",
+                                     trace_prefix, method_str, url_str, "status=" + std::to_string(status) + " " + summary);
         } else {
-            Logger::instance().info("[HTTP] <-- {} {} status={} {}",
-                                     method_str, url_str, status, summary);
+            Logger::instance().info("[HTTP] {}<-- {} {} {}",
+                                     trace_prefix, method_str, url_str, "status=" + std::to_string(status) + " " + summary);
         }
     }
     return send_response(connection, status, body);
@@ -1193,14 +1198,28 @@ std::string HttpServer::get_realtime_stats() {
 }
 
 std::string HttpServer::get_stats_trend(const std::string& start_time, const std::string& end_time) {
-    Logger::instance().info("[gRPC] GetFiberStatsTrend start={} end={}", start_time.c_str(), end_time.c_str());
+    // 无参数时默认查询最近 24 小时
+    std::string st = start_time, et = end_time;
+    if (st.empty() || et.empty()) {
+        auto now = std::chrono::system_clock::now();
+        auto ago = now - std::chrono::hours(24);
+        auto fmt = [](std::chrono::system_clock::time_point tp) {
+            time_t t = std::chrono::system_clock::to_time_t(tp);
+            struct tm tm_buf; localtime_r(&t, &tm_buf);
+            char buf[32]; strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_buf);
+            return std::string(buf);
+        };
+        if (st.empty()) st = fmt(ago);
+        if (et.empty()) et = fmt(now);
+    }
+    Logger::instance().info("[gRPC] GetFiberStatsTrend start={} end={}", st.c_str(), et.c_str());
     fiber::maint::GetFiberStatsTrendRequest req;
-    req.set_start_time(start_time);
-    req.set_end_time(end_time);
+    req.set_start_time(st);
+    req.set_end_time(et);
     grpc::ClientContext ctx;
     fiber::maint::GetFiberStatsTrendResponse resp;
-    auto st = fiber_maint_stub_->GetFiberStatsTrend(&ctx, req, &resp);
-    if (!st.ok()) { Logger::instance().error("[gRPC] GetFiberStatsTrend failed: {}", st.error_message()); return ""; }
+    auto rpc_st = fiber_maint_stub_->GetFiberStatsTrend(&ctx, req, &resp);
+    if (!rpc_st.ok()) { Logger::instance().error("[gRPC] GetFiberStatsTrend failed: {}", rpc_st.error_message()); return ""; }
     Logger::instance().info("[gRPC] GetFiberStatsTrend points={}", resp.points_size());
     std::string json = "{\"points\": [";
     for (int i = 0; i < resp.points_size(); ++i) {

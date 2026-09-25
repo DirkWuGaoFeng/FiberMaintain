@@ -26,7 +26,6 @@ Thumbs.db
 
 # Build
 build/
-Services/build/
 
 # Environment
 .env
@@ -43,3 +42,16 @@ Agent/deer-flow-agent/
 
 # Python client venv
 python_client/.venv/
+
+# 个人隐私文件（简历相关，不上远程仓库）
+/个人简历_*.docx
+/简历生成说明.md
+/generate_resume.py
+/generate_resume_v2.py
+
+# 临时调试/探针脚本与输出（下划线前缀约定为一次性文件）
+_debug_stream.txt
+_probe_test.py
+Services/scripts/_r.sh
+Services/scripts/_ws_*.py
+**/tests/_*.txt

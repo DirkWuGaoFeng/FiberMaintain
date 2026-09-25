@@ -1,0 +1,70 @@
+/*
+ * app.qss - 浅色主题样式表
+ * 作者：FiberMaintain Team
+ * 设计意图：集中定义语义色与控件外观。所有颜色以注释标记语义，
+ * 二期做深色主题时只需新增一份同名覆盖文件并整体替换色值。
+ */
+
+/* ── 全局 ── */
+QMainWindow, QDialog { background: #f5f6f8; }
+QToolTip { color: #303133; background: #ffffff; border: 1px solid #dcdfe6; }
+
+/* ── 左侧导航 ── */
+QListWidget#navList {
+    background: #2b3a4a; border: none; outline: 0;
+}
+QListWidget#navList::item {
+    color: #cfd8e3; padding: 14px 20px; border: none;
+}
+QListWidget#navList::item:selected {
+    background: #1a6fb5; color: #ffffff;
+}
+QListWidget#navList::item:hover:!selected {
+    background: #37485c;
+}
+
+/* ── 统计卡片 ── */
+QFrame#statCard {
+    background: #ffffff; border: 1px solid #e4e7ed; border-radius: 8px;
+}
+QLabel#statValue { font-size: 26px; font-weight: bold; }
+QLabel#statValueRed { font-size: 26px; font-weight: bold; color: #d93026; }      /* 红=故障 */
+QLabel#statValueYellow { font-size: 26px; font-weight: bold; color: #b8860b; }   /* 黄=劣化 */
+QLabel#statValueGreen { font-size: 26px; font-weight: bold; color: #1f9e55; }    /* 绿=正常 */
+QLabel#statTitle { color: #909399; font-size: 12px; }
+
+/* ── 表格 ── */
+QTableView {
+    background: #ffffff; alternate-background-color: #fafbfc;
+    gridline-color: #ebeef5; selection-background-color: #d6e9fb;
+    selection-color: #303133; border: 1px solid #e4e7ed;
+}
+QHeaderView::section {
+    background: #f0f2f5; color: #606266; padding: 5px 8px;
+    border: none; border-bottom: 1px solid #dcdfe6;
+}
+
+/* ── 详情抽屉 ── */
+QGroupBox {
+    background: #ffffff; border: 1px solid #e4e7ed; border-radius: 6px;
+    margin-top: 10px; padding-top: 6px; font-weight: bold; color: #303133;
+}
+QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }
+
+/* ── 状态栏 ── */
+QStatusBar { background: #eceef1; color: #606266; }
+
+/* ── 时间档位按钮组 ── */
+QPushButton#rangeBtn { padding: 4px 14px; }
+QPushButton#rangeBtn:checked { background: #1a6fb5; color: #ffffff; border: 1px solid #1a6fb5; }
+
+/* ── 工具按钮/输入框通用 ── */
+QLineEdit, QDateTimeEdit, QComboBox {
+    background: #ffffff; border: 1px solid #dcdfe6; border-radius: 4px;
+    padding: 4px 8px; selection-background-color: #1a6fb5;
+}
+QPushButton {
+    background: #ffffff; border: 1px solid #dcdfe6; border-radius: 4px; padding: 5px 14px;
+}
+QPushButton:hover { border-color: #1a6fb5; color: #1a6fb5; }
+QPushButton:pressed { background: #ecf5ff; }

@@ -3,6 +3,9 @@ include_directories(${PROTO_BIN_DIR})
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MICROHTTPD REQUIRED libmicrohttpd)
 
+# WebSocket 服务器依赖 Boost.Beast（header-only）+ Asio
+find_package(Boost REQUIRED COMPONENTS system)
+
 add_executable(api_gateway
     main.cpp
     http_server.cpp
@@ -16,5 +19,6 @@ target_link_libraries(api_gateway
     ${PROTOBUF_LIBRARIES}
     ${MYSQL_LIBRARIES}
     ${MICROHTTPD_LIBRARIES}
+    Boost::system
     Threads::Threads
 )

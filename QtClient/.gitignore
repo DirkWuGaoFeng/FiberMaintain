@@ -1,0 +1,49 @@
+# QtClient 构建产物与 IDE 缓存
+# 设计意图：命令行(cmake+ninja)与 Qt Creator 均会各自生成构建目录，
+# 统一用通配忽略，避免编译中间件、moc/rcc 生成物进入版本库。
+
+# ── CMake / Ninja / Make 构建目录 ──
+build/
+build-*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+
+# ── Qt Creator 个人/会话配置（不随工程共享）──
+*.pro.user
+*.pro.user.*
+*.cmake.user
+CMakeLists.txt.user*
+
+# ── Qt 元编译 / 资源生成物 ──
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.autogen/
+*_autogen/
+
+# ── 编译中间件与链接产物 ──
+*.o
+*.obj
+*.mo
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.loc
+*.tab*
+*.sim
+*.swo
+*.swp
+Makefile
+
+# ── 日志与临时文件 ──
+*.log
+*.tmp
+tmp/
