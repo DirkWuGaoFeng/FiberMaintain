@@ -31,3 +31,31 @@ target_link_libraries(fiber_maint_test
     ${MYSQL_LIBRARIES}
     Threads::Threads
 )
+
+# E2E integration tests: color calculation full scenario coverage
+add_executable(fiber_maint_e2e_test
+    test_fiber_maint_e2e.cpp
+)
+
+target_link_libraries(fiber_maint_e2e_test
+    proto
+    common
+    ${GRPC_LIBRARIES}
+    ${PROTOBUF_LIBRARIES}
+    ${MYSQL_LIBRARIES}
+    Threads::Threads
+)
+
+# Full service API functional tests
+add_executable(all_services_test
+    test_all_services.cpp
+)
+
+target_link_libraries(all_services_test
+    proto
+    common
+    ${GRPC_LIBRARIES}
+    ${PROTOBUF_LIBRARIES}
+    ${MYSQL_LIBRARIES}
+    Threads::Threads
+)

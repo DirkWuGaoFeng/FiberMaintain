@@ -16,6 +16,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <chrono>
 
 namespace fiber_maint {
 
@@ -90,6 +91,36 @@ public:
         alarm_pending_.clear();
 
         // 连纤：FIFO 全量取出
+        batch.fiber_events.reserve(fiber_queue_.size());
+        for (auto& event : fiber_queue_) {
+            batch.fiber_events.push_back(std::move(event));
+        }
+        fiber_queue_.clear();
+
+        batch.full_sync_done = full_sync_done_;
+        full_sync_done_ = false;
+
+        return batch;
+    }
+
+    /// 带超时的 drain：等待指定时间后无论是否有事件都返回（用于告警重试唤醒）
+    template<typename Duration>
+    EventBatch drain_timeout(std::atomic<bool>& running, Duration timeout) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait_for(lock, timeout, [&]() {
+            return !alarm_pending_.empty() ||
+                   !fiber_queue_.empty() ||
+                   full_sync_done_ ||
+                   !running;
+        });
+
+        EventBatch batch;
+        batch.alarm_events.reserve(alarm_pending_.size());
+        for (auto& [key, event] : alarm_pending_) {
+            batch.alarm_events.push_back(std::move(event));
+        }
+        alarm_pending_.clear();
+
         batch.fiber_events.reserve(fiber_queue_.size());
         for (auto& event : fiber_queue_) {
             batch.fiber_events.push_back(std::move(event));

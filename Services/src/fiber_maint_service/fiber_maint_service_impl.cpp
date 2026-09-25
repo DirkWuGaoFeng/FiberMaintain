@@ -202,13 +202,19 @@ void FiberMaintServiceImpl::sync_color_cache() {
 }
 
 void FiberMaintServiceImpl::full_color_recalc() {
-    std::shared_lock<std::shared_mutex> lock(cache_rw_mutex_);
-    Logger::instance().info("Full color recalculation started");
-    for (const auto& [fid, entry] : fiber_by_id_) {
-        if (!entry.is_inter_ne) continue;
-        lock.unlock();
+    // 快照 fiber IDs，避免长时间持有 shared_lock 导致 writer 饥饿
+    std::vector<int32_t> inter_ne_fibers;
+    {
+        std::shared_lock<std::shared_mutex> lock(cache_rw_mutex_);
+        inter_ne_fibers.reserve(fiber_by_id_.size());
+        for (const auto& [fid, entry] : fiber_by_id_) {
+            if (entry.is_inter_ne) inter_ne_fibers.push_back(fid);
+        }
+    }
+    Logger::instance().info("Full color recalculation started ({} fibers)", inter_ne_fibers.size());
+    for (int32_t fid : inter_ne_fibers) {
+        if (!running_) break;
         recalculate_fiber_color(fid);
-        lock.lock();
     }
     Logger::instance().info("Full color recalculation completed");
 }
@@ -321,11 +327,24 @@ void FiberMaintServiceImpl::process_fiber_event(
     int32_t fid = event.fiber_id();
     bool is_inter_ne = false;
 
-    {
-        std::unique_lock<std::shared_mutex> lock(cache_rw_mutex_);
-        Logger::instance().info("process_fiber_event {} {}", fid, event.event_type());
-        if (event.event_type() == fiber::common::FIBER_CREATED) {
-            // Fetch full fiber info from topology service
+    if (event.event_type() == fiber::common::FIBER_CREATED) {
+        // 优先使用事件携带的 FiberInfo，避免在订阅线程上回调 GetFiber 导致流阻塞
+        if (event.has_fiber() && event.fiber().fiber_id() != 0) {
+            const auto& fiber = event.fiber();
+            is_inter_ne = fiber.src_ne_id() != fiber.dst_ne_id();
+            FiberCacheEntry entry{
+                fiber.fiber_id(),
+                fiber.src_board_id(), fiber.src_port_id(), fiber.src_ne_id(),
+                fiber.dst_board_id(), fiber.dst_port_id(), fiber.dst_ne_id(),
+                is_inter_ne
+            };
+            std::unique_lock<std::shared_mutex> lock(cache_rw_mutex_);
+            Logger::instance().info("process_fiber_event CREATED {} inter_ne={}", fid, is_inter_ne);
+            fiber_by_id_[entry.fiber_id] = entry;
+            fiber_by_port_.insert({{entry.src_board_id, entry.src_port_id}, entry.fiber_id});
+            fiber_by_port_.insert({{entry.dst_board_id, entry.dst_port_id}, entry.fiber_id});
+        } else {
+            // 回退路径：事件未携带 fiber 信息（兼容旧版 TopologyService）
             grpc::ClientContext ctx;
             fiber::topology::GetFiberRequest req;
             req.set_fiber_id(fid);
@@ -340,20 +359,27 @@ void FiberMaintServiceImpl::process_fiber_event(
                     fiber.dst_board_id(), fiber.dst_port_id(), fiber.dst_ne_id(),
                     is_inter_ne
                 };
+                std::unique_lock<std::shared_mutex> lock(cache_rw_mutex_);
+                Logger::instance().info("process_fiber_event CREATED {} inter_ne={} (fallback)", fid, is_inter_ne);
                 fiber_by_id_[entry.fiber_id] = entry;
                 fiber_by_port_.insert({{entry.src_board_id, entry.src_port_id}, entry.fiber_id});
                 fiber_by_port_.insert({{entry.dst_board_id, entry.dst_port_id}, entry.fiber_id});
-            }
-        } else if (event.event_type() == fiber::common::FIBER_DELETED) {
-            auto it = fiber_by_id_.find(fid);
-            if (it != fiber_by_id_.end()) {
-                is_inter_ne = it->second.is_inter_ne;
-                fiber_by_port_.erase({it->second.src_board_id, it->second.src_port_id});
-                fiber_by_port_.erase({it->second.dst_board_id, it->second.dst_port_id});
-                fiber_by_id_.erase(it);
+            } else {
+                Logger::instance().error("process_fiber_event: GetFiber failed for {}: {}", fid, status.error_message());
             }
         }
+    } else if (event.event_type() == fiber::common::FIBER_DELETED) {
+        std::unique_lock<std::shared_mutex> lock(cache_rw_mutex_);
+        Logger::instance().info("process_fiber_event DELETED {}", fid);
+        auto it = fiber_by_id_.find(fid);
+        if (it != fiber_by_id_.end()) {
+            is_inter_ne = it->second.is_inter_ne;
+            fiber_by_port_.erase({it->second.src_board_id, it->second.src_port_id});
+            fiber_by_port_.erase({it->second.dst_board_id, it->second.dst_port_id});
+            fiber_by_id_.erase(it);
+        }
     }
+
     QueueEvent qe;
     qe.type = EventType::FIBER_EVENT;
     qe.fiber_id = fid;
@@ -364,32 +390,105 @@ void FiberMaintServiceImpl::process_fiber_event(
 }
 
 void FiberMaintServiceImpl::event_process_loop() {
+    // 待重试告警：dep_builder 尚未建立索引时暂存，连纤事件到达后重试
+    std::vector<QueueEvent> pending_alarms;
+    int pending_retry_count = 0;
+    constexpr int RESYNC_THRESHOLD = 4;  ///< 重试超过此次数后触发缓存重同步
+    auto last_resync = std::chrono::steady_clock::now();
+    constexpr auto PERIODIC_RESYNC_INTERVAL = std::chrono::seconds(2);
+
     while (running_) {
-        EventBatch batch = event_queue_.drain(running_);
+        // 使用超时 drain，确保周期性校验能触发
+        EventBatch batch = event_queue_.drain_timeout(running_, std::chrono::milliseconds(500));
+
         if (!running_ && batch.alarm_events.empty()
                      && batch.fiber_events.empty()
                      && !batch.full_sync_done) break;
 
         std::unordered_set<int32_t> affected_fibers;
+
+        // ── 处理新到达的告警 ──
         for (const auto& ae : batch.alarm_events) {
             auto deps = dep_builder_.lookup({ae.board_id, ae.port_id});
-            for (size_t i = 0; i < deps.size(); ++i){
-                Logger::instance().info("EventProcessLoop: dependency {} {}, affected_fiber {}", ae.board_id, ae.port_id, deps[i].fiber_id);
-                affected_fibers.insert(deps[i].fiber_id);
+            if (deps.empty()) {
+                if (pending_alarms.size() < 200)
+                    pending_alarms.push_back(ae);
+            } else {
+                for (size_t i = 0; i < deps.size(); ++i) {
+                    Logger::instance().info("EventProcessLoop: dependency {} {}, affected_fiber {}", ae.board_id, ae.port_id, deps[i].fiber_id);
+                    affected_fibers.insert(deps[i].fiber_id);
+                }
             }
         }
+
+        // ── 处理连纤事件（重建依赖索引） ──
         for (const auto& fe : batch.fiber_events) {
             dep_builder_.rebuild(fe.fiber_id);
             if (fe.is_inter_ne) affected_fibers.insert(fe.fiber_id);
             auto topo = resolver_.resolve(fe.fiber_id);
             if (!topo.is_inter_ne) {
-                auto inter = resolver_.get_inter_ne_fibers_by_port({topo.src.board_id, 1});
-                for (int32_t fid : inter) { affected_fibers.insert(fid); dep_builder_.rebuild(fid); }
+                auto inter_src = resolver_.get_inter_ne_fibers_by_port({topo.src.board_id, 1});
+                for (int32_t fid : inter_src) { affected_fibers.insert(fid); dep_builder_.rebuild(fid); }
+                auto inter_dst = resolver_.get_inter_ne_fibers_by_port({topo.dst.board_id, 1});
+                for (int32_t fid : inter_dst) { affected_fibers.insert(fid); dep_builder_.rebuild(fid); }
             }
         }
+
+        // ── 待处理告警重试 + 缓存重同步补偿 ──
+        auto now = std::chrono::steady_clock::now();
+        bool periodic_resync_due = (now - last_resync) >= PERIODIC_RESYNC_INTERVAL;
+
+        if (!pending_alarms.empty()) {
+            if (!batch.fiber_events.empty()) {
+                pending_retry_count = 0;
+            } else {
+                ++pending_retry_count;
+            }
+            if (pending_retry_count >= RESYNC_THRESHOLD || periodic_resync_due) {
+                Logger::instance().info("EventProcessLoop: resync fiber cache (pending={}, retries={})",
+                                        pending_alarms.size(), pending_retry_count);
+                sync_fiber_cache();
+                dep_builder_.build_all();
+                pending_retry_count = 0;
+                last_resync = now;
+                periodic_resync_due = false;
+            }
+
+            std::vector<QueueEvent> still_pending;
+            for (const auto& ae : pending_alarms) {
+                auto deps = dep_builder_.lookup({ae.board_id, ae.port_id});
+                if (deps.empty()) {
+                    still_pending.push_back(ae);
+                } else {
+                    for (size_t i = 0; i < deps.size(); ++i) {
+                        Logger::instance().info("EventProcessLoop: retry dependency {} {}, affected_fiber {}", ae.board_id, ae.port_id, deps[i].fiber_id);
+                        affected_fibers.insert(deps[i].fiber_id);
+                    }
+                }
+            }
+            // 重同步后仍无法解析的告警丢弃（避免无限累积）
+            if (pending_retry_count == 0 && !still_pending.empty()) {
+                Logger::instance().warn("EventProcessLoop: dropping {} unresolvable alarms", still_pending.size());
+                still_pending.clear();
+            }
+            pending_alarms = std::move(still_pending);
+        }
+
+        // 周期性全量校验（独立于告警重试，补偿丢失的删除/创建事件）
+        if (periodic_resync_due && sync_state_.load() == SyncState::SYNCED) {
+            sync_fiber_cache();
+            dep_builder_.build_all();
+            last_resync = now;
+            full_color_recalc();
+        }
+
+        // full_sync_done 放在 fiber 事件处理之后，确保依赖索引已重建
         if (batch.full_sync_done) {
             sync_state_.store(SyncState::SYNCED);
             full_color_recalc();
+            pending_alarms.clear();
+            pending_retry_count = 0;
+            last_resync = std::chrono::steady_clock::now();
             continue;
         }
         for (int32_t fid : affected_fibers) {
@@ -526,6 +625,7 @@ void FiberMaintServiceImpl::push_color_event(const fiber::maint::FiberColorEvent
 
 void FiberMaintServiceImpl::trend_task() {
     int interval_sec = Config::instance().get_int("trend_interval_seconds", 300);
+    Logger::instance().info("Trend task started, interval={}s", interval_sec);
     while (running_) {
         try {
             int32_t r = 0, y = 0, g = 0;
@@ -539,9 +639,17 @@ void FiberMaintServiceImpl::trend_task() {
             }
             auto conn = DBConnectionPool::instance().get_connection();
             if (conn) {
-                std::string sql = "INSERT INTO fiber_stats_trend (timestamp,red_count,yellow_count,green_count,total_colored) VALUES (NOW()," +
-                    std::to_string(r) + "," + std::to_string(y) + "," + std::to_string(g) + "," + std::to_string(r+y+g) + ")";
-                mysql_query(conn.get(), sql.c_str());
+                // 表 fiber_stats_trend 仅含 timestamp/red_count/yellow_count/total_colored 列；
+                // total_colored 语义为“非绿色光纤数”，与 GetAllColoredFibers 保持一致（RED + YELLOW）
+                std::string sql = "INSERT INTO fiber_stats_trend (timestamp,red_count,yellow_count,total_colored) VALUES (NOW()," +
+                    std::to_string(r) + "," + std::to_string(y) + "," + std::to_string(r + y) + ")";
+                if (mysql_query(conn.get(), sql.c_str()) != 0) {
+                    Logger::instance().error("Trend insert failed: {}", mysql_error(conn.get()));
+                } else {
+                    Logger::instance().info("Trend recorded: red={}, yellow={}, green={}, total_colored={}", r, y, g, r + y);
+                }
+            } else {
+                Logger::instance().error("Trend task: DB connection unavailable");
             }
         } catch (const std::exception& e) {
             Logger::instance().error("Trend task exception: {}", e.what());
@@ -554,7 +662,7 @@ void FiberMaintServiceImpl::trend_task() {
 grpc::Status FiberMaintServiceImpl::GetFiberPerformance(grpc::ServerContext*, const fiber::maint::GetFiberPerformanceRequest* req, fiber::maint::GetFiberPerformanceResponse* resp) {
     resp->set_fiber_id(req->fiber_id());
     auto topo = resolver_.resolve(req->fiber_id());
-    if (topo.fiber_id == 0) return grpc::Status(grpc::NOT_FOUND, "Fiber not found");
+    if (!topo.exists) return grpc::Status(grpc::NOT_FOUND, "Fiber not found");
     if (!topo.is_inter_ne) return grpc::Status(grpc::FAILED_PRECONDITION, "Only inter-NE");
     auto result = perf_executor_->execute(topo);
     resp->set_src_oop(result.src_oop); resp->set_dst_iop(result.dst_iop);
@@ -577,7 +685,7 @@ grpc::Status FiberMaintServiceImpl::BatchGetFiberPerformance(grpc::ServerContext
 
 grpc::Status FiberMaintServiceImpl::GetFiberHistoryPerformance(grpc::ServerContext*, const fiber::maint::GetFiberHistoryPerformanceRequest* req, fiber::maint::GetFiberHistoryPerformanceResponse* resp) {
     auto topo = resolver_.resolve(req->fiber_id());
-    if (topo.fiber_id == 0) return grpc::Status(grpc::NOT_FOUND, "Not found");
+    if (!topo.exists) return grpc::Status(grpc::NOT_FOUND, "Not found");
     if (!topo.is_inter_ne) return grpc::Status(grpc::FAILED_PRECONDITION, "Only inter-NE");
     int32_t sb = topo.src.board_id, db = topo.dst.board_id;
     if (topo.scene_type == SceneType::SCENE_2 && topo.primary_peer) db = topo.primary_peer->board_id;
@@ -596,7 +704,7 @@ grpc::Status FiberMaintServiceImpl::BatchGetFiberHistoryPerformance(grpc::Server
     for (int32_t fid : req->fiber_ids()) {
         auto* result = resp->add_results(); result->set_fiber_id(fid);
         auto topo = resolver_.resolve(fid);
-        if (topo.fiber_id == 0) { result->set_error_code(1); continue; }
+        if (!topo.exists) { result->set_error_code(1); continue; }
         if (!topo.is_inter_ne) { result->set_error_code(2); continue; }
         int32_t sb = topo.src.board_id, db = topo.dst.board_id;
         if (topo.scene_type == SceneType::SCENE_2 && topo.primary_peer) db = topo.primary_peer->board_id;
@@ -615,7 +723,7 @@ grpc::Status FiberMaintServiceImpl::BatchGetFiberHistoryPerformance(grpc::Server
 grpc::Status FiberMaintServiceImpl::GetFiberSpanloss(grpc::ServerContext*, const fiber::maint::GetFiberSpanlossRequest* req, fiber::maint::GetFiberSpanlossResponse* resp) {
     resp->set_fiber_id(req->fiber_id());
     auto topo = resolver_.resolve(req->fiber_id());
-    if (topo.fiber_id == 0) return grpc::Status(grpc::NOT_FOUND, "Not found");
+    if (!topo.exists) return grpc::Status(grpc::NOT_FOUND, "Not found");
     if (!topo.is_inter_ne) { resp->set_spanloss(0.0); return grpc::Status::OK; }
     auto result = spanloss_calc_->calculate(topo);
     resp->set_spanloss(result.spanloss);
@@ -626,7 +734,7 @@ grpc::Status FiberMaintServiceImpl::BatchGetFiberSpanloss(grpc::ServerContext*, 
     for (int32_t fid : req->fiber_ids()) {
         auto* out = resp->add_results(); out->set_fiber_id(fid);
         auto topo = resolver_.resolve(fid);
-        if (topo.fiber_id == 0) { out->set_found(false); out->set_spanloss(0.0); continue; }
+        if (!topo.exists) { out->set_found(false); out->set_spanloss(0.0); continue; }
         out->set_found(true);
         if (!topo.is_inter_ne) { out->set_spanloss(0.0); continue; }
         out->set_spanloss(spanloss_calc_->calculate(topo).spanloss);

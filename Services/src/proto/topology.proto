@@ -72,6 +72,7 @@ message FiberEvent {
     fiber.common.FiberEventType event_type = 1;
     int32 fiber_id = 2;
     string timestamp = 3;
+    fiber.common.FiberInfo fiber = 4;  ///< CREATED 时携带完整连纤信息，避免订阅线程回调
 }
 
 message GetFiberSceneRequest {

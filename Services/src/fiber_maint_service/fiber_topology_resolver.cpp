@@ -36,6 +36,7 @@ FiberTopologyInfo FiberTopologyResolver::resolve(int32_t fiber_id) const {
         return info;
     }
 
+    info.exists = true;
     const auto& entry = it->second;
     info.is_inter_ne = entry.is_inter_ne;
     info.src = {entry.src_board_id, static_cast<int32_t>(entry.src_port_id)};

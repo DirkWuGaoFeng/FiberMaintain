@@ -66,4 +66,5 @@ private:
     void update_port_occupied(int32_t board_id, int32_t port_id, bool occupied);
 
     SceneResolver scene_resolver_;  // 场景解析插件
+    std::shared_ptr<fiber::board::BoardService::Stub> board_stub_;  ///< 复用 BoardService 连接
 };

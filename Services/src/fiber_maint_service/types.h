@@ -116,6 +116,7 @@ struct DependencyEntry {
 
 struct FiberTopologyInfo {
     int32_t     fiber_id = 0;
+    bool        exists = false;    ///< fiber_id 是否存在于缓存中
 
     PortKey     src;             ///< 源端（board_id, port_id）
     PortKey     dst;             ///< 宿端（board_id, port_id）

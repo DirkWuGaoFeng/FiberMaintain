@@ -16,8 +16,12 @@ bool TopologyServiceImpl::init() {
     std::string database = config.get_string("db.database", "db_topology");
 
     // 初始化场景解析插件
-    scene_resolver_.set_board_service_addr(
-        config.get_string("board_service.addr", "localhost:50051"));
+    std::string board_addr = config.get_string("board_service.addr", "localhost:50051");
+    scene_resolver_.set_board_service_addr(board_addr);
+
+    // 复用 BoardService 连接，避免每次验证都创建新 channel
+    board_stub_ = fiber::board::BoardService::NewStub(
+        grpc::CreateChannel(board_addr, grpc::InsecureChannelCredentials()));
 
     return DBConnectionPool::instance().init(host, port, user, password, database);
 }
@@ -107,6 +111,15 @@ grpc::Status TopologyServiceImpl::CreateFiber(grpc::ServerContext* context,
     event.set_event_type(fiber::common::FiberEventType::FIBER_CREATED);
     event.set_fiber_id(fiber_id);
     event.set_timestamp(get_current_timestamp());
+    // 携带完整连纤信息，避免订阅方回调 GetFiber 导致线程阻塞
+    auto* fi = event.mutable_fiber();
+    fi->set_fiber_id(fiber_id);
+    fi->set_src_board_id(src_board_id);
+    fi->set_src_port_id(src_port_id);
+    fi->set_src_ne_id(src_ne_id);
+    fi->set_dst_board_id(dst_board_id);
+    fi->set_dst_port_id(dst_port_id);
+    fi->set_dst_ne_id(dst_ne_id);
     push_fiber_event(event);
     
     return grpc::Status::OK;
@@ -347,10 +360,12 @@ grpc::Status TopologyServiceImpl::SubscribeFiberEvents(grpc::ServerContext* cont
             event_queue_.pop();
             lock.unlock();
             
+            Logger::instance().info("SubscribeFiberEvents: writing fiber_id={}", event.fiber_id());
             if (!writer->Write(event)) {
                 Logger::instance().warn("Client disconnected from fiber event stream");
                 return grpc::Status::OK;
             }
+            Logger::instance().info("SubscribeFiberEvents: wrote fiber_id={} OK", event.fiber_id());
             
             lock.lock();
         }
@@ -385,16 +400,13 @@ grpc::Status TopologyServiceImpl::HealthCheck(grpc::ServerContext* context,
 }
 
 void TopologyServiceImpl::push_fiber_event(const fiber::topology::FiberEvent& event) {
+    Logger::instance().info("push_fiber_event: fiber_id={} type={}", event.fiber_id(), static_cast<int>(event.event_type()));
     std::lock_guard<std::mutex> lock(event_mutex_);
     event_queue_.push(event);
     event_cv_.notify_all();
 }
 
 bool TopologyServiceImpl::validate_board_exists(int32_t board_id) {
-    std::string board_addr = Config::instance().get_string("board_service.addr", "localhost:50051");
-    auto channel = grpc::CreateChannel(board_addr, grpc::InsecureChannelCredentials());
-    auto stub = fiber::board::BoardService::NewStub(channel);
-    
     fiber::board::GetBoardRequest req;
     req.set_board_id(board_id);
     fiber::board::GetBoardResponse resp;
@@ -402,15 +414,11 @@ bool TopologyServiceImpl::validate_board_exists(int32_t board_id) {
     grpc::ClientContext ctx;
     ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
     
-    auto status = stub->GetBoard(&ctx, req, &resp);
+    auto status = board_stub_->GetBoard(&ctx, req, &resp);
     return status.ok();
 }
 
 bool TopologyServiceImpl::validate_port_available(int32_t board_id, int32_t port_id) {
-    std::string board_addr = Config::instance().get_string("board_service.addr", "localhost:50051");
-    auto channel = grpc::CreateChannel(board_addr, grpc::InsecureChannelCredentials());
-    auto stub = fiber::board::BoardService::NewStub(channel);
-    
     fiber::board::GetBoardRequest req;
     req.set_board_id(board_id);
     fiber::board::GetBoardResponse resp;
@@ -418,7 +426,7 @@ bool TopologyServiceImpl::validate_port_available(int32_t board_id, int32_t port
     grpc::ClientContext ctx;
     ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
     
-    auto status = stub->GetBoard(&ctx, req, &resp);
+    auto status = board_stub_->GetBoard(&ctx, req, &resp);
     if (!status.ok()) {
         return false;
     }
@@ -467,10 +475,6 @@ bool TopologyServiceImpl::validate_passive_port_one(int32_t board_id) {
 }
 
 int32_t TopologyServiceImpl::get_board_ne_id(int32_t board_id) {
-    std::string board_addr = Config::instance().get_string("board_service.addr", "localhost:50051");
-    auto channel = grpc::CreateChannel(board_addr, grpc::InsecureChannelCredentials());
-    auto stub = fiber::board::BoardService::NewStub(channel);
-    
     fiber::board::GetBoardRequest req;
     req.set_board_id(board_id);
     fiber::board::GetBoardResponse resp;
@@ -478,7 +482,7 @@ int32_t TopologyServiceImpl::get_board_ne_id(int32_t board_id) {
     grpc::ClientContext ctx;
     ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
     
-    auto status = stub->GetBoard(&ctx, req, &resp);
+    auto status = board_stub_->GetBoard(&ctx, req, &resp);
     if (status.ok()) {
         return resp.board().ne_id();
     }
@@ -487,10 +491,6 @@ int32_t TopologyServiceImpl::get_board_ne_id(int32_t board_id) {
 }
 
 void TopologyServiceImpl::update_port_occupied(int32_t board_id, int32_t port_id, bool occupied) {
-    std::string board_addr = Config::instance().get_string("board_service.addr", "localhost:50051");
-    auto channel = grpc::CreateChannel(board_addr, grpc::InsecureChannelCredentials());
-    auto stub = fiber::board::BoardService::NewStub(channel);
-    
     fiber::board::UpdatePortOccupiedRequest req;
     req.set_board_id(board_id);
     req.set_port_id(port_id);
@@ -500,5 +500,5 @@ void TopologyServiceImpl::update_port_occupied(int32_t board_id, int32_t port_id
     grpc::ClientContext ctx;
     ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
     
-    stub->UpdatePortOccupied(&ctx, req, &resp);
+    board_stub_->UpdatePortOccupied(&ctx, req, &resp);
 }

@@ -156,8 +156,13 @@ grpc::Status AlarmServiceImpl::GetCurrentAlarm(grpc::ServerContext* context,
     int32_t port_id = request->port_id();
     
     char sql[256];
-    sprintf(sql, "SELECT board_id, port_id, alarm_level, raised_at FROM current_alarms WHERE board_id = %d AND port_id = %d",
-            board_id, port_id);
+    if (board_id == 0) {
+        // board_id=0 表示查询全部活跃告警（限制100条）
+        sprintf(sql, "SELECT board_id, port_id, alarm_level, raised_at FROM current_alarms ORDER BY raised_at DESC LIMIT 100");
+    } else {
+        sprintf(sql, "SELECT board_id, port_id, alarm_level, raised_at FROM current_alarms WHERE board_id = %d AND port_id = %d",
+                board_id, port_id);
+    }
     
     if (mysql_query(conn.get(), sql) != 0) {
         return grpc::Status(grpc::INTERNAL, "");
